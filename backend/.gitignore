@@ -1,0 +1,2 @@
+# remove all files(node_modules) in the backend directory
+node_modules/*
