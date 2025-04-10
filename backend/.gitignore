@@ -1,5 +1,8 @@
-# remove all files(node_modules) in the backend directory - icnluding folder itself
+# remove all files(node_modules) in the backend directory - including folder itself
 node_modules
 
-//remove env files
+#remove env files
 .env
+
+#remove vs_code settings
+.vscode
