@@ -6,3 +6,6 @@ node_modules
 
 #remove vs_code settings
 .vscode
+
+#remove help docs in the root directory - types (.md)
+docs/*.md 
