@@ -1,5 +1,5 @@
 # remove all files(node_modules) in the backend directory - icnluding folder itself
 node_modules
 
-
-
+//remove env files
+.env
