@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera permission for QR scanning -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Internet permission for API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
     <application
-        android:label="mobile"
+        android:label="Fuel Quota Manager"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
