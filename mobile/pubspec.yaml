@@ -38,6 +38,9 @@ dependencies:
   # QR code scanner
   mobile_scanner: ^3.5.6
   
+  # QR code generator
+  qr_flutter: ^4.1.0
+  
   # State management
   provider: ^6.1.2
   

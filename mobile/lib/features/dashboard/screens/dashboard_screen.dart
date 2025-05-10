@@ -128,16 +128,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-
   Widget _buildSummarySection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Today\'s Summary',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Today\'s Summary',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/sample-qr');
+              },
+              icon: const Icon(Icons.qr_code),
+              label: const Text('QR Samples'),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
         ),
         UIHelper.vSpaceMedium,
         Row(
