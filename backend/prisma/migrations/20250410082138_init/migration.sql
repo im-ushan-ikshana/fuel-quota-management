@@ -1,4 +1,4 @@
--- CreateTable
+USE fuel_quota_management;
 CREATE TABLE `role` (
     `role_id` INTEGER NOT NULL AUTO_INCREMENT,
     `role_name` VARCHAR(191) NOT NULL,

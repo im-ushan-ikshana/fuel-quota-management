@@ -1,77 +1,53 @@
-// -----------------------------------------------------
-//  1) Configure your DATABASE and GENERATOR
-// -----------------------------------------------------
-datasource db {
-  provider = "mysql" // or "postgresql", etc. if you use a different DB
-  url      = env("DATABASE_URL") // e.g. mysql://root:password@localhost:3306/db_name
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// -----------------------------------------------------
-//  2) MODELS (mapped from your SQL tables)
-// -----------------------------------------------------
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
 
 model Role {
-  role_id   Int    @id @default(autoincrement())
+  role_id   Int         @id @default(autoincrement())
   role_name String
-
-  // RELATIONS - Many-to-many with User via User_Role
   user_role User_Role[]
 
-  //map to the table name in the database
   @@map("role")
 }
 
 model User {
-  user_id       Int      @id @default(autoincrement())
-  full_name     String
-  nic           String   @unique
-  email         String   @unique
-  phone_number  String?
-  password_hash String
-  created_at    DateTime @default(now())
-
-  // RELATIONS
-  // Many-to-many with Role via User_Role
-  user_role            User_Role[]
-
-  // A user can own many vehicles
-  vehicles             Vehicle[]
-
-  // A user can own a fuel station (if they have STATION_OWNER role)
+  user_id              Int                @id @default(autoincrement())
+  full_name            String
+  nic                  String
+  email                String             @unique
+  phone_number         String?
+  password_hash        String
+  created_at           DateTime           @default(now())
   fuelStations         Fuel_Station[]     @relation("StationOwner")
-
-  // A user can act as an operator for many transactions
   transactionsOperated Fuel_Transaction[] @relation("OperatorUser")
+  user_role            User_Role[]
+  vehicles             Vehicle[]
 
   @@map("user")
 }
 
 model User_Role {
-  // Composite primary key matching user_id + role_id
   user_id Int
   role_id Int
+  role    Role @relation(fields: [role_id], references: [role_id])
+  user    User @relation(fields: [user_id], references: [user_id])
 
-  // RELATIONS - Many-to-one
-  // A user can have multiple roles
-  // A role can be assigned to multiple users
-  user User @relation(fields: [user_id], references: [user_id])
-  role Role @relation(fields: [role_id], references: [role_id])
-
-  @@id([user_id, role_id]) // compound primary key
-  //map to the table name in the database
+  @@id([user_id, role_id])
+  @@index([role_id], map: "user_role_role_id_fkey")
   @@map("user_role")
 }
 
 model Department_of_Motor_Traffic {
   dmt_id          Int      @id @default(autoincrement())
-  registration_no String  @unique
-  chassis_no      String  @unique
-  engine_no       String  @unique
-  owner_nic       String  
+  registration_no String
+  chassis_no      String
+  engine_no       String
+  owner_nic       String
   vehicle_brand   String?
   vehicle_model   String?
   vehicle_type    String?
@@ -81,72 +57,67 @@ model Department_of_Motor_Traffic {
 }
 
 model Vehicle {
-  vehicle_id      Int    @id @default(autoincrement())
-  registration_no String @unique
-  chassis_no      String 
-  engine_no       String
-  vehicle_type    String
-  qr_code         String
-  user_id         Int
-
-  // RELATIONS - One-to-many
-  // A vehicle can have multiple fuel quotas
-  // A vehicle can have multiple fuel transactions
-  user              User               @relation(fields: [user_id], references: [user_id])
+  vehicle_id        Int                @id @default(autoincrement())
+  registration_no   String             @unique
+  chassis_no        String
+  engine_no         String
+  vehicle_type      String
+  qr_code           String
+  user_id           Int
   fuel_quotas       Fuel_Quota[]
   fuel_transactions Fuel_Transaction[]
+  user              User               @relation(fields: [user_id], references: [user_id])
 
+  @@index([user_id], map: "vehicle_user_id_fkey")
   @@map("vehicle")
 }
 
 model Fuel_Station {
-  station_id      Int     @id @default(autoincrement())
-  station_name    String
-  station_license String
-  address         String?
-  district        String?
-  owner_user_id   Int
-
-  // RELATIONS - One-to-many
-  // A fuel station can have multiple fuel transactions
-  // A fuel station is owned by one user
-  // A user can own multiple fuel stations
+  station_id        Int                @id @default(autoincrement())
+  station_name      String
+  station_license   String
+  address           String?
+  district          String?
+  owner_user_id     Int
   owner             User               @relation("StationOwner", fields: [owner_user_id], references: [user_id])
   fuel_transactions Fuel_Transaction[]
 
+  @@index([owner_user_id], map: "fuel_station_owner_user_id_fkey")
   @@map("fuel_station")
 }
 
 model Fuel_Quota {
-  quota_id         Int    @id @default(autoincrement())
+  quota_id         Int     @id @default(autoincrement())
   vehicle_id       Int
   allocated_litres Float
-  used_litres      Float  @default(0)
-  quota_period     String // e.g. monthly or weekly label
+  used_litres      Float   @default(0)
+  quota_period     String
+  vehicle          Vehicle @relation(fields: [vehicle_id], references: [vehicle_id])
 
-  // RELATIONS
-  vehicle Vehicle @relation(fields: [vehicle_id], references: [vehicle_id])
-
+  @@index([vehicle_id], map: "fuel_quota_vehicle_id_fkey")
   @@map("fuel_quota")
 }
 
 model Fuel_Transaction {
-  transaction_id   Int      @id @default(autoincrement())
+  transaction_id   Int          @id @default(autoincrement())
   vehicle_id       Int
   station_id       Int
   operator_user_id Int
   pumped_litres    Float
-  transaction_time DateTime @default(now())
+  transaction_time DateTime     @default(now())
+  operator         User         @relation("OperatorUser", fields: [operator_user_id], references: [user_id])
+  station          Fuel_Station @relation(fields: [station_id], references: [station_id])
+  vehicle          Vehicle      @relation(fields: [vehicle_id], references: [vehicle_id])
 
-  // RELATIONS - One-to-many
-  // A fuel transaction is associated with one vehicle
-  // A fuel transaction is associated with one fuel station
-  // A fuel transaction is operated by one user
-  // A user can operate multiple transactions
-  // A vehicle can have multiple transactions
-  // A fuel station can have multiple transactions
-  vehicle  Vehicle      @relation(fields: [vehicle_id], references: [vehicle_id])
-  station  Fuel_Station @relation(fields: [station_id], references: [station_id])
+  @@index([operator_user_id], map: "fuel_transaction_operator_user_id_fkey")
+  @@index([station_id], map: "fuel_transaction_station_id_fkey")
+  @@index([vehicle_id], map: "fuel_transaction_vehicle_id_fkey")
+  @@map("fuel_transaction")
+}
+: [station_id])
+  operator User         @relation("OperatorUser", fields: [operator_user_id], references: [user_id])
+
+elds: [station_id], references: [station_id])
   operator User         @relation("OperatorUser", fields: [operator_user_id], references: [user_id])
 
   @@map("fuel_transaction")
