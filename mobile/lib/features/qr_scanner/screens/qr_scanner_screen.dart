@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/data/models/vehicle.dart';
+import 'package:mobile/data/repositories/fuel_repository.dart';
 import 'package:mobile/features/vehicle_details/screens/vehicle_details_screen.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -105,7 +107,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   void _toggleTorch() {
     _scannerController.toggleTorch();
   }
-
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessingCode) return;
 
@@ -123,11 +124,17 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     });
 
     try {
-      // In a real app, this would be an API call to validate the QR code
-      // For now, we'll just simulate a network delay and show a demo vehicle
-      await Future.delayed(const Duration(seconds: 2));
+      // Get the fuel repository to check quota
+      final fuelRepository = Provider.of<FuelRepository>(context, listen: false);
       
-      // Demo vehicle data - in a real app, this would come from the API
+      // Try to fetch vehicle data using the QR code
+      // For demo purposes, we'll still use the mock data since the API isn't ready
+      
+      // In a production app, we would call:
+      // final quotaResponse = await fuelRepository.checkQuota(code);
+      
+      // Mock data for now
+      await Future.delayed(const Duration(seconds: 2));
       final demoVehicles = Vehicle.getDemoVehicles();
       
       if (code.length < 3 || int.tryParse(code) == null) {

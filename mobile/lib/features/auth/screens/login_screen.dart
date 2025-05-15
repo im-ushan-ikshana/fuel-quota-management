@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/core/utils/helpers.dart';
 import 'package:mobile/core/widgets/app_button.dart';
 import 'package:mobile/core/widgets/app_text_field.dart';
 import 'package:mobile/data/models/user.dart';
+import 'package:mobile/data/repositories/auth_repository.dart';
 import 'package:mobile/features/dashboard/screens/dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,6 +20,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _rememberMe = false;
   bool _isLoading = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+    Future<void> _loadSavedCredentials() async {
+    final authRepository = Provider.of<AuthRepository>(context, listen: false);
+    final savedUsername = await authRepository.getSavedUsername();
+    final rememberMe = await authRepository.getRememberMe();
+    
+    if (mounted) {
+      setState(() {
+        if (savedUsername != null) {
+          _usernameController.text = savedUsername;
+        }
+        _rememberMe = rememberMe;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -146,28 +168,56 @@ class _LoginScreenState extends State<LoginScreen> {
         const Text('Remember me'),
       ],
     );
-  }
-
-  void _handleLogin() async {
-    // Skip validation for now as per requirement
-    // Normally we would validate and authenticate
+  }  void _handleLogin() async {
+    if (_formKey.currentState?.validate() != true) {
+      return;
+    }
     
-    // For now, we'll just navigate to the dashboard with a demo user
+    final authRepository = Provider.of<AuthRepository>(context, listen: false);
+    
     setState(() {
       _isLoading = true;
     });
-
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 2));
-
-    // Navigate to dashboard
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => DashboardScreen(user: User.demo()),
-        ),
+    
+    try {
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text.trim();
+      
+      final success = await authRepository.login(
+        username, 
+        password, 
+        rememberMe: _rememberMe
       );
+      
+      if (success && mounted) {
+        final user = authRepository.currentUser;
+        
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DashboardScreen(user: user!),
+          ),
+        );      } else if (mounted) {
+        UIHelper.showSnackBar(
+          context,
+          authRepository.error ?? 'Login failed',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        UIHelper.showSnackBar(
+          context,
+          'Login error: ${e.toString()}',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 }

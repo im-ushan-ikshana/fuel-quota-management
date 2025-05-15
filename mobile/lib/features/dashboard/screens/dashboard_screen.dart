@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/core/utils/helpers.dart';
 import 'package:mobile/data/models/transaction.dart';
 import 'package:mobile/data/models/user.dart';
+import 'package:mobile/data/repositories/auth_repository.dart';
 import 'package:mobile/features/auth/screens/login_screen.dart';
 import 'package:mobile/features/dashboard/widgets/recent_transaction_card.dart';
 import 'package:mobile/features/dashboard/widgets/summary_card.dart';

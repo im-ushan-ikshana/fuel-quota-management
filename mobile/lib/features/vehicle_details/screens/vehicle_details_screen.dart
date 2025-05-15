@@ -4,8 +4,11 @@ import 'package:mobile/core/utils/helpers.dart';
 import 'package:mobile/core/widgets/app_button.dart';
 import 'package:mobile/data/models/vehicle.dart';
 import 'package:mobile/data/models/user.dart';
+import 'package:mobile/data/repositories/auth_repository.dart';
+import 'package:mobile/data/repositories/fuel_repository.dart';
 import 'package:mobile/features/dashboard/screens/dashboard_screen.dart';
 import 'package:mobile/features/vehicle_details/widgets/quota_indicator.dart';
+import 'package:provider/provider.dart';
 
 class VehicleDetailsScreen extends StatefulWidget {
   final Vehicle vehicle;
@@ -325,10 +328,27 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     });
     
     try {
-      // In a real app, this would be an API call to process the transaction
-      await Future.delayed(const Duration(seconds: 2));
-
-      if (mounted) {
+      final fuelRepository = context.read<FuelRepository>();
+      final user = context.read<AuthRepository>().currentUser;
+      
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+      
+      final fuelAmount = double.parse(_fuelAmountController.text);
+        // Make sure stationId is not null
+      if (user.stationId == null) {
+        throw Exception('Station ID not found for current user');
+      }
+      
+      final success = await fuelRepository.pumpFuel(
+        qrCode: widget.vehicle.id,
+        vehicleId: widget.vehicle.id,
+        pumpedLitres: fuelAmount,
+        stationId: user.stationId!,
+      );
+      
+      if (success && mounted) {
         _showSuccessDialog();
       }
     } catch (e) {
