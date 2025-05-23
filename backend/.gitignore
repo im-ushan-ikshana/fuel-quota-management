@@ -8,4 +8,4 @@ node_modules
 .vscode
 
 #remove help docs in the root directory - types (.md)
-docs/*.md 
+docs/*-temp.md 

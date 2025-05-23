@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mobile/core/utils/helpers.dart';
 import 'package:mobile/core/widgets/app_button.dart';
 import 'package:mobile/data/models/vehicle.dart';
 import 'package:mobile/data/models/user.dart';
-import 'package:mobile/data/repositories/auth_repository.dart';
-import 'package:mobile/data/repositories/fuel_repository.dart';
 import 'package:mobile/features/dashboard/screens/dashboard_screen.dart';
 import 'package:mobile/features/vehicle_details/widgets/quota_indicator.dart';
-import 'package:provider/provider.dart';
 
 class VehicleDetailsScreen extends StatefulWidget {
   final Vehicle vehicle;
@@ -67,6 +63,7 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
       ),
     );
   }
+
   Widget _buildVehicleInfoCard() {
     return Card(
       elevation: 3,
@@ -85,10 +82,13 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
                   color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: SvgPicture.asset(
-                  _getVehicleImagePath(widget.vehicle.vehicleType),
-                  height: 60,
-                  width: 60,
+                child: Icon(
+                  widget.vehicle.vehicleType.toLowerCase() == 'motorcycle'
+                      ? Icons.motorcycle
+                      : widget.vehicle.vehicleType.toLowerCase() == 'van'
+                          ? Icons.airport_shuttle
+                          : Icons.directions_car,
+                  size: 50,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
@@ -116,13 +116,8 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
       ),
     );
   }
+
   Widget _buildInfoRow(String label, String value, IconData icon) {
-    // Format registration number if needed (e.g., ABC1234 to ABC-1234)
-    String displayValue = value;
-    if (label == 'Registration Number') {
-      displayValue = _formatRegistrationNumber(value);
-    }
-    
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -143,7 +138,7 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              displayValue,
+              value,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -330,27 +325,10 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     });
     
     try {
-      final fuelRepository = context.read<FuelRepository>();
-      final user = context.read<AuthRepository>().currentUser;
-      
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-      
-      final fuelAmount = double.parse(_fuelAmountController.text);
-        // Make sure stationId is not null
-      if (user.stationId == null) {
-        throw Exception('Station ID not found for current user');
-      }
-      
-      final success = await fuelRepository.pumpFuel(
-        qrCode: widget.vehicle.id,
-        vehicleId: widget.vehicle.id,
-        pumpedLitres: fuelAmount,
-        stationId: user.stationId!,
-      );
-      
-      if (success && mounted) {
+      // In a real app, this would be an API call to process the transaction
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
         _showSuccessDialog();
       }
     } catch (e) {
@@ -414,6 +392,7 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
       ),
     );
   }
+
   void _handleBackPress(BuildContext context) {
     showDialog(
       context: context,
@@ -435,43 +414,5 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
         ],
       ),
     );
-  }
-    // Helper method to get the appropriate SVG image path based on vehicle type
-  String _getVehicleImagePath(String vehicleType) {
-    switch (vehicleType.toLowerCase()) {
-      case 'car':
-        return 'assets/images/car.svg';
-      case 'van':
-        return 'assets/images/van.svg';
-      case 'motorcycle':
-        return 'assets/images/motorcycle.svg';
-      case 'threewheeler':
-        return 'assets/images/threewheeler.svg';
-      case 'lorry':
-        return 'assets/images/lorry.svg';
-      default:
-        return 'assets/images/car.svg'; // Default to car if type is unknown
-    }
-  }
-  
-  // Helper method to format registration number with dash (e.g., ABC-1234)
-  String _formatRegistrationNumber(String regNumber) {
-    // If it already has a dash, return as is
-    if (regNumber.contains('-')) {
-      return regNumber;
-    }
-    
-    // Find the first digit in the string
-    final regExp = RegExp(r'[0-9]');
-    final match = regExp.firstMatch(regNumber);
-    
-    if (match != null) {
-      final digitIndex = match.start;
-      // Insert a dash before the first digit
-      return '${regNumber.substring(0, digitIndex)}-${regNumber.substring(digitIndex)}';
-    }
-    
-    // If no digits found, return original string
-    return regNumber;
   }
 }
