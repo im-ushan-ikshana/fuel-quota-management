@@ -1,10 +1,10 @@
-# How to Set Up and Run Prisma
+# Setting Up and Using Prisma in Your Project
 
-## For Windows Users (Step-by-Step)
+This comprehensive guide explains how to set up, configure, and effectively use Prisma in your Node.js application.
+
+## Initial Setup
 
 ### 1. Open a terminal and go to the `backend` folder:
-
-If you're using Git Bash or Command Prompt:
 
 ```bash
 cd backend
