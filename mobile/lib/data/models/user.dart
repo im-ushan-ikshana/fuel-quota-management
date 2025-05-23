@@ -1,24 +1,27 @@
 class User {
   final String id;
   final String username;
-  final String fullName;
+  final String? fullName;
   final String stationName;
+  final String? stationId;
   final String role;
 
   User({
     required this.id, 
     required this.username,
-    required this.fullName,
+    this.fullName,
     required this.stationName,
+    this.stationId,
     required this.role,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'],
+      id: json['id'].toString(),
       username: json['username'],
       fullName: json['fullName'],
       stationName: json['stationName'],
+      stationId: json['stationId'],
       role: json['role'],
     );
   }
@@ -29,6 +32,7 @@ class User {
       'username': username,
       'fullName': fullName,
       'stationName': stationName,
+      'stationId': stationId,
       'role': role,
     };
   }
@@ -37,10 +41,53 @@ class User {
   factory User.demo() {
     return User(
       id: '1',
-      username: 'operator1',
+      username: 'station001',
       fullName: 'John Doe',
-      stationName: 'Central Fuel Station',
-      role: 'operator',
+      stationName: 'City Fuel Station',
+      stationId: 'FS001',
+      role: 'STATION_OPERATOR',
     );
+  }
+  
+  // Demo users for testing
+  static User demoUser(String username) {
+    switch (username) {
+      case 'station001':
+        return User(
+          id: '1',
+          username: 'station001',
+          fullName: 'John Doe',
+          stationName: 'City Fuel Station',
+          stationId: 'FS001',
+          role: 'STATION_OPERATOR',
+        );
+      case 'station002':
+        return User(
+          id: '2',
+          username: 'station002',
+          fullName: 'Jane Smith',
+          stationName: 'Highway Fuel Station',
+          stationId: 'FS002',
+          role: 'STATION_OPERATOR',
+        );
+      case 'station003':
+        return User(
+          id: '3',
+          username: 'station003',
+          fullName: 'Mike Johnson',
+          stationName: 'Rural Fuel Station',
+          stationId: 'FS003',
+          role: 'STATION_OPERATOR',
+        );
+      default:
+        return User(
+          id: '1',
+          username: 'station001',
+          fullName: 'John Doe',
+          stationName: 'City Fuel Station',
+          stationId: 'FS001',
+          role: 'STATION_OPERATOR',
+        );
+    }
   }
 }
