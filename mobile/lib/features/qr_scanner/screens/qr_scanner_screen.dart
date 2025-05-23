@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/data/models/vehicle.dart';
+import 'package:mobile/data/repositories/fuel_repository.dart';
 import 'package:mobile/features/vehicle_details/screens/vehicle_details_screen.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -17,10 +19,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     torchEnabled: false,
   );
   bool _isProcessingCode = false;
+  final TextEditingController _registrationController = TextEditingController();
 
   @override
   void dispose() {
     _scannerController.dispose();
+    _registrationController.dispose();
     super.dispose();
   }
 
@@ -46,57 +50,108 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
           ),
         ],
       ),
-      body: Stack(
+      body: Column(
         children: [
-          // Scanner view
-          MobileScanner(
-            controller: _scannerController,
-            onDetect: _onDetect,
-          ),
-          
-          // Scan overlay
-          Center(
-            child: Container(
-              width: 250,
-              height: 250,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Colors.white,
-                  width: 2.0,
+          // Scanner view (reduced height to make room for the input field)
+          Expanded(
+            flex: 3,
+            child: Stack(
+              children: [
+                // Scanner view
+                MobileScanner(
+                  controller: _scannerController,
+                  onDetect: _onDetect,
                 ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          
-          // Instructions
-          Positioned(
-            bottom: 100,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.black.withOpacity(0.5),
-              child: const Text(
-                'Position the QR code within the square',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+                
+                // Scan overlay
+                Center(
+                  child: Container(
+                    width: 250,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 2.0,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
-              ),
+                
+                // Instructions
+                Positioned(
+                  bottom: 20,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.black.withOpacity(0.5),
+                    child: const Text(
+                      'Position the QR code within the square',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Processing indicator
+                if (_isProcessingCode)
+                  Container(
+                    color: Colors.black.withOpacity(0.7),
+                    child: const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                  ),
+              ],
             ),
           ),
           
-          // Processing indicator
-          if (_isProcessingCode)
-            Container(
-              color: Colors.black.withOpacity(0.7),
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white),
+          // Manual entry section
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.all(16.0),
+              color: Theme.of(context).cardColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'OR Enter Vehicle Registration Number',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _registrationController,
+                          decoration: const InputDecoration(
+                            hintText: 'e.g. ABC-1234',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          textCapitalization: TextCapitalization.characters,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () => _processRegistrationNumber(_registrationController.text),
+                        child: const Text('Search'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
+          ),
         ],
       ),
     );
@@ -105,7 +160,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   void _toggleTorch() {
     _scannerController.toggleTorch();
   }
-
+  
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessingCode) return;
 
@@ -123,32 +178,64 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     });
 
     try {
-      // In a real app, this would be an API call to validate the QR code
-      // For now, we'll just simulate a network delay and show a demo vehicle
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Demo vehicle data - in a real app, this would come from the API
-      final demoVehicles = Vehicle.getDemoVehicles();
-      
-      if (code.length < 3 || int.tryParse(code) == null) {
-        _showErrorDialog('Invalid vehicle code. Please scan a valid QR code.');
-        return;
-      }
-      
-      // Pick a vehicle based on the code's last digit to simulate different vehicles
-      final index = int.parse(code.substring(code.length - 1)) % demoVehicles.length;
-      final vehicle = demoVehicles[index];
-      
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => VehicleDetailsScreen(vehicle: vehicle),
-          ),
-        );
-      }
+      await _processVehicleCode(code);
     } catch (e) {
       _showErrorDialog('Error processing QR code: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessingCode = false;
+        });
+      }
+    }
+  }
+
+  // Process either QR code or manual entry
+  Future<void> _processVehicleCode(String code) async {
+    // Get the fuel repository to check quota
+    final fuelRepository = Provider.of<FuelRepository>(context, listen: false);
+    
+    // Try to fetch vehicle data using the code
+    // For demo purposes, we'll still use the mock data since the API isn't ready
+    
+    // In a production app, we would call:
+    // final quotaResponse = await fuelRepository.checkQuota(code);
+    
+    // Mock data for now
+    await Future.delayed(const Duration(seconds: 1));
+    final demoVehicles = Vehicle.getDemoVehicles();
+    
+    // Find matching vehicle by registration number (for manual entry)
+    Vehicle? matchedVehicle = demoVehicles.firstWhere(
+      (v) => v.registrationNumber.toLowerCase() == code.toLowerCase(),
+      orElse: () => demoVehicles[0], // Default to first vehicle if not found
+    );
+    
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VehicleDetailsScreen(vehicle: matchedVehicle),
+        ),
+      );
+    }
+  }
+  
+  // Handle manual entry of registration number
+  void _processRegistrationNumber(String registrationNumber) {
+    if (registrationNumber.isEmpty) {
+      _showErrorDialog('Please enter a vehicle registration number');
+      return;
+    }
+    
+    setState(() {
+      _isProcessingCode = true;
+    });
+    
+    try {
+      _processVehicleCode(registrationNumber);
+    } catch (e) {
+      _showErrorDialog('Error finding vehicle: $e');
     } finally {
       if (mounted) {
         setState(() {
