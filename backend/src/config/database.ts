@@ -1,5 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import PrismaService from '../services/prisma.service';
+import PrismaService from '../services/prisma.services';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('Database');

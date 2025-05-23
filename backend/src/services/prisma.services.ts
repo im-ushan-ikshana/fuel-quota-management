@@ -1,6 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createLogger } from '../utils/logger';
-import { handlePrismaError } from '../utils/prisma-middleware';
+import { handlePrismaError } from '../utils/prisma.middleware';
 
 // Create a logger for Prisma operations
 const logger = createLogger('PrismaService');

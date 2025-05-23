@@ -5,6 +5,7 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { Database } from './config/database';
 import { logger } from './utils/logger';
+import v1router from './v1.route';
 
 // Load environment variables
 dotenv.config();
@@ -112,6 +113,9 @@ class App {
       });
     });
 
+    //add v1.routes.ts here
+    this.app.use('/api/v1', v1router);
+    
     // 404 handler for undefined routes
     this.app.use((req: Request, res: Response) => {
       res.status(404).json({

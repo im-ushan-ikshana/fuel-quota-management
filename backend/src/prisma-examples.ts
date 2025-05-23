@@ -6,7 +6,7 @@
 // This example file demonstrates direct usage of the Database class with explicit error handling.
 
 import { Database } from './config/database';
-import { handlePrismaError } from './utils/prisma-middleware';
+import { handlePrismaError } from './utils/prisma.middleware';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 // Define the types based on our schema
