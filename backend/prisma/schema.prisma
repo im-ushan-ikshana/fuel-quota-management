@@ -187,7 +187,6 @@ model Address {
   city        String
   district    District
   province    Province
-  postalCode  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -208,7 +207,6 @@ model VehicleOwner {
   lastName        String
   phoneNumber     String    @unique
   nicNumber       String    @unique // National Identity Card number
-  passportNumber  String?   @unique
   isActive        Boolean   @default(true)
   emailVerified   Boolean   @default(false)
   phoneVerified   Boolean   @default(false)
@@ -236,23 +234,14 @@ model Vehicle {
   engineNumber      String
   make              String
   model             String
-  yearOfManufacture Int
   vehicleType       VehicleType
   fuelType          FuelType
-  engineCapacity    Int?               // in CC
-  color             String
-  registrationStatus RegistrationStatus @default(PENDING)
-  registrationDate  DateTime?
-  expiryDate        DateTime?
   qrCode            String?            @unique
   qrCodeGeneratedAt DateTime?
   monthlyQuotaLimit Float              @default(0) // in liters
   currentQuotaUsed  Float              @default(0) // in liters
   quotaResetDate    DateTime?
   isActive          Boolean            @default(true)
-  rejectionReason   String?
-  insuranceNumber   String?
-  insuranceExpiry   DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   
@@ -276,11 +265,6 @@ model DMTValidation {
   engineNumber      String
   ownerNic          String
   ownerName         String
-  validationStatus  Boolean   
-  validationResponse Json?    
-  errorCode         String?
-  errorMessage      String?
-  validatedAt       DateTime  @default(now())
   
   // Relationships
   vehicle           Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
@@ -298,12 +282,9 @@ model FuelStationOwner {
   phoneNumber     String    @unique
   nicNumber       String    @unique
   businessRegNo   String    @unique
-  vatNumber       String?   @unique
   businessName    String
   isActive        Boolean   @default(true)
   emailVerified   Boolean   @default(false)
-  registrationStatus RegistrationStatus @default(PENDING)
-  rejectionReason String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
@@ -325,14 +306,7 @@ model FuelStation {
   name            String
   phoneNumber     String
   licenseNumber   String             @unique
-  registrationStatus RegistrationStatus @default(PENDING)
   isActive        Boolean            @default(true)
-  operatingHours  Json?              // store opening/closing hours
-  rejectionReason String?
-  ceypetcoDealer  Boolean            @default(false) 
-  iocDealer       Boolean            @default(false)
-  shellDealer     Boolean            @default(false)
-  totalDealer     Boolean            @default(false)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   
@@ -362,8 +336,6 @@ model FuelStationOperator {
   nicNumber       String      @unique
   employeeId      String      @unique
   isActive        Boolean     @default(true)
-  hiredDate       DateTime?
-  terminatedDate  DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   
@@ -387,17 +359,12 @@ model AdminUser {
   lastName        String
   phoneNumber     String    @unique
   nicNumber       String    @unique
-  employeeId      String    @unique
-  department      String?   // Ministry, DMT, Petroleum Ministry
   isActive        Boolean   @default(true)
   lastLogin       DateTime?
-  passwordLastChanged DateTime @default(now())
-  mustChangePassword Boolean @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
   // Relationships
-  auditLogs       AuditLog[]
   userRoles       UserRole_Assignment[]
   
   @@map("admin_users")
@@ -407,11 +374,9 @@ model AdminUser {
 model UserRole_Assignment {
   id           String @id @default(cuid())
   userId       String
-  userType     String // "vehicle_owner", "fuel_station_owner", "admin", "operator"
+  userType     String
   roleId       String
-  assignedBy   String?
   assignedAt   DateTime @default(now())
-  expiresAt    DateTime?
   isActive     Boolean @default(true)
   
   // Relationships
@@ -435,10 +400,8 @@ model FuelTransaction {
   totalAmount     Float             // in LKR
   status          TransactionStatus @default(COMPLETED)
   qrCodeScanned   String
-  invoiceNumber   String?
   smsStatus       String?           // SMS delivery status
   smsId           String?           // Twilio SMS ID
-  notes           String?
   quotaBefore     Float             // quota before transaction
   quotaAfter      Float             // quota after transaction
   transactionDate DateTime          @default(now())
@@ -467,7 +430,6 @@ model FuelInventory {
   maximumLevel    Float       // maximum stock level
   lastRefillDate  DateTime?
   lastRefillAmount Float?
-  averageDailyConsumption Float?
   lastUpdated     DateTime    @default(now())
   
   // Foreign keys
@@ -485,10 +447,6 @@ model FuelPrice {
   id              String      @id @default(cuid())
   fuelType        FuelType
   pricePerLiter   Float       // in LKR
-  effectiveFrom   DateTime    @default(now())
-  effectiveTo     DateTime?
-  isActive        Boolean     @default(true)
-  setBy           String?     // Who set this price
   createdAt       DateTime    @default(now())
   
   // Foreign keys
@@ -505,18 +463,11 @@ model QuotaSettings {
   id              String      @id @default(cuid())
   vehicleType     VehicleType
   fuelType        FuelType
-  monthlyLimit    Float       // in liters
-  weeklyLimit     Float?      // in liters
-  dailyLimit      Float?      // in liters
-  isActive        Boolean     @default(true)
-  effectiveFrom   DateTime    @default(now())
-  effectiveTo     DateTime?
-  setBy           String?     // Admin who set this quota
-  approvedBy      String?     // Higher authority approval
+  weeklyLimit     Float      // in liters   // Higher authority approval
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   
-  @@unique([vehicleType, fuelType, effectiveFrom])
+  @@unique([vehicleType, fuelType])
   @@map("quota_settings")
 }
 
@@ -528,115 +479,9 @@ model SmsLog {
   messageType     String      // transaction, alert, verification, etc.
   status          String      // sent, failed, delivered, etc.
   twilioSid       String?     // Twilio SMS ID
-  errorMessage    String?
-  cost            Float?      // SMS cost
   sentAt          DateTime    @default(now())
-  deliveredAt     DateTime?
   
   @@index([phoneNumber])
   @@index([status])
   @@map("sms_logs")
-}
-
-// Audit Log model
-model AuditLog {
-  id              String      @id @default(cuid())
-  action          String      // e.g., "APPROVE_VEHICLE", "REJECT_STATION"
-  entityType      String      // e.g., "Vehicle", "FuelStation"
-  entityId        String      // ID of the affected entity
-  oldValues       Json?       // previous state
-  newValues       Json?       // new state
-  ipAddress       String?
-  userAgent       String?
-  sessionId       String?
-  reason          String?     // reason for the action
-  createdAt       DateTime    @default(now())
-  
-  // Foreign keys
-  adminUserId     String
-  
-  // Relationships
-  adminUser       AdminUser   @relation(fields: [adminUserId], references: [id])
-  
-  @@index([entityType, entityId])
-  @@index([adminUserId])
-  @@map("audit_logs")
-}
-
-// System Configuration model
-model SystemConfig {
-  id              String      @id @default(cuid())
-  key             String      @unique
-  value           String
-  dataType        String      @default("string") // string, number, boolean, json
-  category        String      // system, sms, quotas, etc.
-  description     String?
-  isEncrypted     Boolean     @default(false)
-  isActive        Boolean     @default(true)
-  modifiedBy      String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
-  @@map("system_config")
-}
-
-// Notification model
-model Notification {
-  id              String      @id @default(cuid())
-  title           String
-  message         String
-  type            String      // INFO, WARNING, ERROR, SUCCESS
-  priority        String      @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
-  targetType      String      // VEHICLE_OWNER, FUEL_STATION_OWNER, ADMIN, OPERATOR
-  targetId        String?     // specific user ID if targeted
-  isRead          Boolean     @default(false)
-  isArchived      Boolean     @default(false)
-  expiresAt       DateTime?
-  createdAt       DateTime    @default(now())
-  readAt          DateTime?
-  
-  @@index([targetType, targetId])
-  @@index([isRead, createdAt])
-  @@map("notifications")
-}
-
-// Holiday Calendar (for quota calculations)
-model Holiday {
-  id              String      @id @default(cuid())
-  name            String
-  date            DateTime    @db.Date
-  type            String      // NATIONAL, RELIGIOUS, BANK
-  isRecurring     Boolean     @default(false)
-  description     String?
-  affectsQuota    Boolean     @default(false)
-  createdAt       DateTime    @default(now())
-  
-  @@unique([date, name])
-  @@map("holidays")
-}
-
-// Error Log model
-model ErrorLog {
-  id              String      @id @default(cuid())
-  errorCode       String
-  errorMessage    String
-  stackTrace      String?
-  userId          String?
-  userType        String?
-  endpoint        String?
-  httpMethod      String?
-  requestBody     Json?
-  responseBody    Json?
-  ipAddress       String?
-  userAgent       String?
-  sessionId       String?
-  severity        String      @default("ERROR") // INFO, WARNING, ERROR, CRITICAL
-  resolved        Boolean     @default(false)
-  resolvedBy      String?
-  resolvedAt      DateTime?
-  createdAt       DateTime    @default(now())
-  
-  @@index([severity, resolved])
-  @@index([errorCode])
-  @@map("error_logs")
 }
