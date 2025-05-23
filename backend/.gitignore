@@ -1,4 +1,6 @@
 # remove all files(node_modules) in the backend directory - including folder itself
+prisma/migrations
+
 node_modules
 
 #remove env files
