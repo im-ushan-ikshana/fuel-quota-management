@@ -3,14 +3,14 @@
 
 // NOTE: In a production application, you would typically create a repository layer
 // that encapsulates all database operations including error handling.
-// This example file demonstrates direct usage of the Database class with explicit error handling.
+// This example file demonstrates direct usage of the PrismaService with explicit error handling.
 
-import { Database } from './config/database';
+import PrismaService from './services/prisma.services';
 import { handlePrismaError } from './utils/prisma.middleware';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
-// Define the types based on our schema
-type VehicleOwner = {
+// Define the types based on our normalized schema
+type User = {
   id: string;
   email: string;
   password: string;
@@ -18,6 +18,15 @@ type VehicleOwner = {
   lastName: string;
   phoneNumber: string;
   nicNumber: string;
+  userType: string;
+  isActive: boolean;
+  // Add other fields as needed
+};
+
+type VehicleOwner = {
+  id: string;
+  userId: string;
+  registrationDate: Date;
   // Add other fields as needed
 };
 
@@ -38,14 +47,21 @@ type FuelTransaction = {
 };
 
 /**
- * Example of using Prisma directly with error handling
+ * Example of using Prisma directly with error handling - now with normalized User model
  */
-export async function getUserById(userId: string): Promise<VehicleOwner | null> {
-  const db = Database.getInstance();
+export async function getUserById(userId: string): Promise<User | null> {
+  const prismaService = PrismaService.getInstance();
   
   try {
-    return await db.getClient().vehicleOwner.findUnique({
-      where: { id: userId }
+    return await prismaService.getClient().user.findUnique({
+      where: { id: userId },
+      include: {
+        address: true,
+        vehicleOwner: true,
+        fuelStationOwner: true,
+        fuelStationOperator: true,
+        adminUser: true
+      }
     });
   } catch (error) {
     throw handlePrismaError(error, 'getting user by ID');
@@ -53,29 +69,153 @@ export async function getUserById(userId: string): Promise<VehicleOwner | null> 
 }
 
 /**
- * Example of using transactions with Prisma
+ * Example of getting a vehicle owner with user details
  */
-export async function createUserWithVehicle(userData: any, vehicleData: any): Promise<{ user: VehicleOwner; vehicle: Vehicle }> {
-  const db = Database.getInstance();
-    try {
-    return await db.transaction(async (prisma: Prisma.TransactionClient) => {
-      // Create user
-      const user = await prisma.vehicleOwner.create({
-        data: userData
-      });
-      
-      // Create vehicle and associate it with the user
-      const vehicle = await prisma.vehicle.create({
+export async function getVehicleOwnerById(vehicleOwnerId: string): Promise<VehicleOwner | null> {
+  const prismaService = PrismaService.getInstance();
+  
+  try {
+    return await prismaService.getClient().vehicleOwner.findUnique({
+      where: { id: vehicleOwnerId },
+      include: {
+        user: {
+          include: {
+            address: true
+          }
+        },
+        vehicles: true
+      }
+    });
+  } catch (error) {
+    throw handlePrismaError(error, 'getting vehicle owner by ID');
+  }
+}
+
+/**
+ * Example of using transactions with Prisma - Updated for normalized User model
+ */
+export async function createUserWithVehicle(
+  userData: { email: string; password: string; firstName: string; lastName: string; phoneNumber: string; nicNumber: string; addressId: string }, 
+  vehicleData: any
+): Promise<{ user: User; vehicleOwner: VehicleOwner; vehicle: Vehicle }> {
+  const prismaService = PrismaService.getInstance();
+  try {
+    return await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
+      // Create user first
+      const user = await prisma.user.create({
         data: {
-          ...vehicleData,
-          ownerId: user.id  // Note: changed from userId to ownerId based on the schema
+          ...userData,
+          userType: 'VEHICLE_OWNER'
         }
       });
       
-      return { user, vehicle };
+      // Create vehicle owner profile
+      const vehicleOwner = await prisma.vehicleOwner.create({
+        data: {
+          userId: user.id
+        }
+      });
+      
+      // Create vehicle and associate it with the vehicle owner
+      const vehicle = await prisma.vehicle.create({
+        data: {
+          ...vehicleData,
+          ownerId: vehicleOwner.id
+        }
+      });
+      
+      return { user, vehicleOwner, vehicle };
     });
   } catch (error) {
     throw handlePrismaError(error, 'creating user with vehicle');
+  }
+}
+
+/**
+ * Example of creating a fuel station owner with normalized User model
+ */
+export async function createFuelStationOwner(
+  userData: { email: string; password: string; firstName: string; lastName: string; phoneNumber: string; nicNumber: string; addressId: string },
+  fuelStationOwnerData: { businessRegNo: string; businessName: string }
+) {
+  const prismaService = PrismaService.getInstance();
+  try {
+    return await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
+      // Create user first
+      const user = await prisma.user.create({
+        data: {
+          ...userData,
+          userType: 'FUEL_STATION_OWNER'
+        }
+      });
+      
+      // Create fuel station owner profile
+      const fuelStationOwner = await prisma.fuelStationOwner.create({
+        data: {
+          userId: user.id,
+          ...fuelStationOwnerData
+        }
+      });
+      
+      return { user, fuelStationOwner };
+    });
+  } catch (error) {
+    throw handlePrismaError(error, 'creating fuel station owner');
+  }
+}
+
+/**
+ * Example of creating an admin user with normalized User model
+ */
+export async function createAdminUser(
+  userData: { email: string; password: string; firstName: string; lastName: string; phoneNumber: string; nicNumber: string; addressId: string }
+) {
+  const prismaService = PrismaService.getInstance();
+  try {
+    return await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
+      // Create user first
+      const user = await prisma.user.create({
+        data: {
+          ...userData,
+          userType: 'ADMIN_USER'
+        }
+      });
+      
+      // Create admin user profile
+      const adminUser = await prisma.adminUser.create({
+        data: {
+          userId: user.id
+        }
+      });
+      
+      return { user, adminUser };
+    });
+  } catch (error) {
+    throw handlePrismaError(error, 'creating admin user');
+  }
+}
+
+/**
+ * Example of getting users by type
+ */
+export async function getUsersByType(userType: string) {
+  const prismaService = PrismaService.getInstance();
+  try {
+    return await prismaService.getClient().user.findMany({
+      where: { 
+        userType: userType as any,
+        isActive: true 
+      },
+      include: {
+        address: true,
+        vehicleOwner: userType === 'VEHICLE_OWNER',
+        fuelStationOwner: userType === 'FUEL_STATION_OWNER',
+        fuelStationOperator: userType === 'FUEL_STATION_OPERATOR',
+        adminUser: userType === 'ADMIN_USER'
+      }
+    });
+  } catch (error) {
+    throw handlePrismaError(error, 'getting users by type');
   }
 }
 
@@ -84,9 +224,9 @@ export async function createUserWithVehicle(userData: any, vehicleData: any): Pr
  */
 export const fuelStationRepository = {
   findAll: async () => {
-    const db = Database.getInstance();
+    const prismaService = PrismaService.getInstance();
     try {
-      return await db.getClient().fuelStation.findMany({
+      return await prismaService.getClient().fuelStation.findMany({
         include: {
           address: true,
           fuelInventory: true
@@ -96,11 +236,10 @@ export const fuelStationRepository = {
       throw handlePrismaError(error, 'finding all fuel stations');
     }
   },
-  
-  findById: async (stationId: string) => {
-    const db = Database.getInstance();
+    findById: async (stationId: string) => {
+    const prismaService = PrismaService.getInstance();
     try {
-      return await db.getClient().fuelStation.findUnique({
+      return await prismaService.getClient().fuelStation.findUnique({
         where: { id: stationId },
         include: {
           address: true,
@@ -112,11 +251,10 @@ export const fuelStationRepository = {
     } catch (error) {
       throw handlePrismaError(error, 'finding fuel station by ID');
     }
-  },
-  updateInventory: async (stationId: string, fuelType: any, quantity: number) => {
-    const db = Database.getInstance();
+  },  updateInventory: async (stationId: string, fuelType: any, quantity: number) => {
+    const prismaService = PrismaService.getInstance();
     try {
-      return await db.transaction(async (prisma: Prisma.TransactionClient) => {
+      return await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
         // Find current inventory
         const currentInventory = await prisma.fuelInventory.findFirst({
           where: {
@@ -169,7 +307,7 @@ export async function searchTransactions(
   pagination: { page: number; pageSize: number },
   sorting: { field: string; direction: 'asc' | 'desc' }
 ): Promise<{ data: FuelTransaction[]; total: number; page: number; pageSize: number }> {
-  const db = Database.getInstance();
+  const prismaService = PrismaService.getInstance();
   const { page, pageSize } = pagination;
   const skip = (page - 1) * pageSize;
   
@@ -194,7 +332,7 @@ export async function searchTransactions(
     if (filters.status) where.status = filters.status;
     
     // Execute query with pagination and sorting
-    const [data, total] = await db.transaction(async (prisma: Prisma.TransactionClient) => {
+    const [data, total] = await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
       const transactions = await prisma.fuelTransaction.findMany({
         where,
         skip,
@@ -227,12 +365,12 @@ export async function searchTransactions(
  * Example of complex reporting query
  */
 export async function generateMonthlyReport(year: number, month: number) {
-  const db = Database.getInstance();
+  const prismaService = PrismaService.getInstance();
     try {
     const startDate = new Date(year, month - 1, 1); // JS months are 0-indexed
     const endDate = new Date(year, month, 0); // Last day of month
     
-    return await db.transaction(async (prisma: Prisma.TransactionClient) => {
+    return await prismaService.transaction(async (prisma: Prisma.TransactionClient) => {
       // Aggregate fuel consumption by type
       const fuelConsumption = await prisma.fuelTransaction.groupBy({
         by: ['fuelType'],
