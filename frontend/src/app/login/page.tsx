@@ -30,8 +30,8 @@ export default function LoginPage() {
       console.log('Login successful:', response.data);
       
       // Store auth token and user data in localStorage or cookies
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+      if (response.data.data.accessToken) {
+        localStorage.setItem('token', response.data.data.accessToken);
         
         if (rememberMe) {
           localStorage.setItem('rememberedEmail', email);
@@ -40,7 +40,17 @@ export default function LoginPage() {
         }
         
         // Redirect based on user type (or to a general dashboard)
-        router.push('/dashboard');
+        console.log('Redirecting to dashboard...');
+        
+        // Use replace for a stronger redirect that replaces the history entry
+        router.replace('/dashboard');
+        
+        // Add a small delay before refreshing to ensure state is updated
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 100);
+      } else {
+        throw new Error('No token received from server');
       }
     } catch (err: any) {
       console.error('Login failed:', err);
@@ -50,14 +60,23 @@ export default function LoginPage() {
     }
   };
 
-  // Check for remembered email on component mount
+  // Check for authenticated state and remembered email on component mount
   useEffect(() => {
+    // Check if user is already logged in
+    const token = localStorage.getItem('token');
+    if (token) {
+      console.log('User already logged in, redirecting to dashboard');
+      router.push('/dashboard');
+      return;
+    }
+    
+    // Check for remembered email
     const rememberedEmail = localStorage.getItem('rememberedEmail');
     if (rememberedEmail) {
       setEmail(rememberedEmail);
       setRememberMe(true);
     }
-  }, []);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
