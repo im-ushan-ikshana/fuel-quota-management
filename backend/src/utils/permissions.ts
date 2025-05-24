@@ -1,4 +1,4 @@
-import PrismaService from "@/services/prisma.services";
+import PrismaService from "../services/prisma.services";
 import { PrismaClient } from "@prisma/client";
 import { logger } from "./logger";
 import { Request, Response, NextFunction } from "express";
