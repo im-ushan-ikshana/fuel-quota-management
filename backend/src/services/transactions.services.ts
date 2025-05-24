@@ -5,7 +5,7 @@ import TransactionRepository, {
 } from '../repositories/transactions.repo';
 import VehicleRepository from '../repositories/vehicles.repo';
 import { createLogger } from '../utils/logger';
-import { FuelTransaction, TransactionStatus, FuelType } from '@prisma/client';
+import { FuelTransaction, FuelType } from '@prisma/client';
 
 const logger = createLogger('TransactionService');
 
@@ -15,15 +15,12 @@ export interface FuelPumpingRequest {
   fuelStationId: string;
   operatorId: string;
   fuelType: FuelType;
-  quantity: number;
-  pricePerLiter: number;
+  quantityLiters: number;
 }
 
 export interface TransactionStatsResponse {
   totalTransactions: number;
   totalFuelDispensed: number;
-  totalRevenue: number;
-  averageTransactionValue: number;
   topFuelTypes: Array<{
     fuelType: FuelType;
     totalQuantity: number;
@@ -66,16 +63,11 @@ class TransactionService {
       // Check fuel type compatibility
       if (vehicle.fuelType !== pumpingRequest.fuelType) {
         throw new Error(`Vehicle requires ${vehicle.fuelType} but ${pumpingRequest.fuelType} was requested`);
+      }      // Check quota availability
+      const remainingQuota = vehicle.weeklyQuotaLiters - vehicle.currentWeekUsed;
+      if (remainingQuota < pumpingRequest.quantityLiters) {
+        throw new Error(`Insufficient quota. Available: ${remainingQuota}L, Requested: ${pumpingRequest.quantityLiters}L`);
       }
-
-      // Check quota availability
-      const remainingQuota = vehicle.monthlyQuotaLimit - vehicle.currentQuotaUsed;
-      if (remainingQuota < pumpingRequest.quantity) {
-        throw new Error(`Insufficient quota. Available: ${remainingQuota}L, Requested: ${pumpingRequest.quantity}L`);
-      }
-
-      // Calculate total amount
-      const totalAmount = pumpingRequest.quantity * pumpingRequest.pricePerLiter;
 
       // Create transaction data
       const transactionData: CreateTransactionData = {
@@ -84,18 +76,16 @@ class TransactionService {
         operatorId: pumpingRequest.operatorId,
         qrCodeScanned: pumpingRequest.qrCode,
         fuelType: pumpingRequest.fuelType,
-        quantity: pumpingRequest.quantity,
-        pricePerLiter: pumpingRequest.pricePerLiter,
-        totalAmount: totalAmount,
-        quotaBefore: vehicle.currentQuotaUsed,
-        quotaAfter: vehicle.currentQuotaUsed + pumpingRequest.quantity,
+        quantityLiters: pumpingRequest.quantityLiters,
+        quotaBefore: vehicle.currentWeekUsed,
+        quotaAfter: vehicle.currentWeekUsed + pumpingRequest.quantityLiters,
       };
 
       // Create the transaction
       const transaction = await this.transactionRepository.createTransaction(transactionData);      // Update vehicle quota
       await this.vehicleRepository.updateQuotaAfterConsumption(
         pumpingRequest.vehicleId,
-        pumpingRequest.quantity
+        pumpingRequest.quantityLiters
       );
 
       // Get transaction with details
@@ -139,10 +129,8 @@ class TransactionService {
 
       if (!vehicle.isActive) {
         throw new Error('Vehicle is not active');
-      }
-
-      const remainingQuota = vehicle.monthlyQuotaLimit - vehicle.currentQuotaUsed;
-      const quotaPercentage = (vehicle.currentQuotaUsed / vehicle.monthlyQuotaLimit) * 100;
+      }      const remainingQuota = vehicle.weeklyQuotaLiters - vehicle.currentWeekUsed;
+      const quotaPercentage = (vehicle.currentWeekUsed / vehicle.weeklyQuotaLiters) * 100;
 
       return {
         vehicle: {
@@ -153,8 +141,8 @@ class TransactionService {
           ownerName: `${vehicle.owner.user.firstName} ${vehicle.owner.user.lastName}`,
         },
         quota: {
-          allocatedQuota: vehicle.monthlyQuotaLimit,
-          usedQuota: vehicle.currentQuotaUsed,
+          allocatedQuota: vehicle.weeklyQuotaLiters,
+          usedQuota: vehicle.currentWeekUsed,
           remainingQuota: remainingQuota,
           quotaPercentage: Math.round(quotaPercentage * 100) / 100,
         },
@@ -236,22 +224,8 @@ class TransactionService {
       logger.error(`Error getting transactions by vehicle:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Update transaction status
-   */
-  async updateTransactionStatus(transactionId: string, status: TransactionStatus): Promise<FuelTransaction> {
-    try {
-      return await this.transactionRepository.updateTransactionStatus(transactionId, status);
-    } catch (error) {
-      logger.error(`Error updating transaction status:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Cancel transaction (soft delete)
+  }  /**
+   * Cancel transaction (hard delete)
    */
   async cancelTransaction(transactionId: string): Promise<FuelTransaction> {
     try {
@@ -285,14 +259,8 @@ class TransactionService {
 
     if (!request.fuelType) {
       throw new Error('Fuel type is required');
-    }
-
-    if (!request.quantity || request.quantity <= 0) {
+    }    if (!request.quantityLiters || request.quantityLiters <= 0) {
       throw new Error('Quantity must be greater than 0');
-    }
-
-    if (!request.pricePerLiter || request.pricePerLiter <= 0) {
-      throw new Error('Price per liter must be greater than 0');
     }
   }
 }
