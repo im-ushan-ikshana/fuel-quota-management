@@ -1,62 +1,21 @@
-'use client';
+"use client";
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import axios from 'axios';
+import { UserData, Transaction, SidebarLink } from './types';
+import VehicleOwnerDashboard from './components/VehicleOwnerDashboard';
+import FuelStationOwnerDashboard from './components/FuelStationOwnerDashboard';
+import FuelStationOperatorDashboard from './components/FuelStationOperatorDashboard';
+import AdminDashboard from './components/AdminDashboard';
+import UserInfoHeader from './components/UserInfoHeader';
+import RoleDashboardHeader from './components/RoleDashboardHeader';
+import QuickActions from './components/QuickActions';
+import { getNavigationByRole } from './navigation/roleBasedNavigation';
+import { updateCurrentNavigation } from './utils/navigationUtils';
 
-// Icons for sidebar/navigation
-const DashboardIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-  </svg>
-);
-
-const FuelIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-  </svg>
-);
-
-const TransactionIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 14l6-6" />
-  </svg>
-);
-
-const MapIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-  </svg>
-);
-
-const ProfileIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-  </svg>
-);
-
-const SettingsIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-  </svg>
-);
-
-const SupportIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
-  </svg>
-);
-
-const LogoutIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-  </svg>
-);
-
+// Icons for mobile navigation
 const MenuIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -69,33 +28,11 @@ const CloseIcon = () => (
   </svg>
 );
 
-// Data interfaces
-interface UserData {
-  name: string;
-  email: string;
-  role: string;
-  quota?: {
-    remaining: number;
-    total: number;
-    lastUpdated: string;
-  };
-}
-
-interface Transaction {
-  id: string;
-  date: string;
-  type: string;
-  amount: number;
-  location: string;
-  status: string;
-}
-
-type SidebarLink = {
-  name: string;
-  href: string;
-  icon: React.ReactNode;
-  current: boolean;
-};
+const LogoutIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+  </svg>
+);
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -104,17 +41,8 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // Navigation items
-  const navigation: SidebarLink[] = [
-    { name: 'Dashboard', href: '/dashboard', icon: <DashboardIcon />, current: true },
-    { name: 'Fuel Requests', href: '/fuel-request', icon: <FuelIcon />, current: false },
-    { name: 'Transactions', href: '/transactions', icon: <TransactionIcon />, current: false },
-    { name: 'Stations', href: '/stations', icon: <MapIcon />, current: false },
-    { name: 'Profile', href: '/profile', icon: <ProfileIcon />, current: false },
-    { name: 'Settings', href: '/settings', icon: <SettingsIcon />, current: false },
-    { name: 'Support', href: '/support', icon: <SupportIcon />, current: false },
-  ];
+  // Get role-specific navigation
+  const [navigation, setNavigation] = useState<SidebarLink[]>([]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -128,19 +56,100 @@ export default function DashboardPage() {
     // Set up mock data (to be replaced with actual API calls)
     const setupMockData = async () => {
       try {
-        setIsLoading(true);
+        setIsLoading(true);        // Mock user data for testing different roles
+        // Uncomment the role you want to test:
         
-        // Mock user data
-        setUserData({
+        // Vehicle Owner role
+        const mockRole: UserData['role'] = 'VEHICLE_OWNER';
+        
+        // Fuel Station Owner role
+        // const mockRole: UserData['role'] = 'FUEL_STATION_OWNER';
+        
+        // Fuel Station Operator role
+        // const mockRole: UserData['role'] = 'FUEL_STATION_OPERATOR';
+        
+        // Admin User role
+        // const mockRole: UserData['role'] = 'ADMIN_USER';
+        
+        // Base user data
+        const baseUserData: UserData = {
           name: "John Doe",
           email: "john@example.com",
-          role: "Vehicle Owner",
-          quota: {
+          role: mockRole
+        };
+        
+        // Add role-specific data
+        if (mockRole === 'VEHICLE_OWNER') {
+          baseUserData.quota = {
             remaining: 36,
             total: 40,
             lastUpdated: "2023-05-01"
-          }
-        });
+          };
+          baseUserData.vehicles = [
+            {
+              id: "VEH001",
+              registrationNumber: "CAR-1234",
+              model: "Toyota Corolla",
+              fuelType: "Petrol",
+              capacity: 45,
+              remainingQuota: 28,
+              totalQuota: 40
+            },
+            {
+              id: "VEH002",
+              registrationNumber: "VAN-5678",
+              model: "Nissan Caravan",
+              fuelType: "Diesel",
+              capacity: 65,
+              remainingQuota: 32,
+              totalQuota: 50
+            }
+          ];
+        } else if (mockRole === 'FUEL_STATION_OWNER' || mockRole === 'FUEL_STATION_OPERATOR') {
+          baseUserData.stations = [
+            {
+              id: "ST001",
+              name: "City Fuel Station",
+              location: "Colombo",
+              availableFuel: {
+                petrol: 5000,
+                diesel: 3500,
+                kerosene: 1200
+              }
+            }
+          ];
+        } else if (mockRole === 'ADMIN_USER') {
+          // Admin has access to all stations and some summary stats
+          baseUserData.stations = [
+            {
+              id: "ST001",
+              name: "City Fuel Station",
+              location: "Colombo",
+              availableFuel: {
+                petrol: 5000,
+                diesel: 3500,
+                kerosene: 1200
+              }
+            },
+            {
+              id: "ST002",
+              name: "Highway Fuel Station",
+              location: "Kandy",
+              availableFuel: {
+                petrol: 3500,
+                diesel: 2500,
+                kerosene: 800
+              }
+            }
+          ];
+        }
+        setUserData(baseUserData);
+        
+        // Set role-specific navigation with current path
+        const roleBasedNav = getNavigationByRole(baseUserData.role);
+        // Assuming we're on dashboard page, set it as current
+        const updatedNav = updateCurrentNavigation(roleBasedNav, '/dashboard');
+        setNavigation(updatedNav);
 
         // Mock transaction data
         setTransactions([
@@ -203,11 +212,34 @@ export default function DashboardPage() {
     fetchUserData();
     */
   }, [router]);
-
   // Function to handle logout
   const handleLogout = () => {
     localStorage.removeItem('token');
     router.replace('/login');
+  };
+
+  // Function to handle navigation
+  const handleNavigation = (href: string) => {
+    const updatedNav = updateCurrentNavigation(navigation, href);
+    setNavigation(updatedNav);
+  };
+
+  // Render different dashboard based on user role
+  const renderDashboardContent = () => {
+    if (!userData) return null;
+
+    switch (userData.role) {
+      case 'VEHICLE_OWNER':
+        return <VehicleOwnerDashboard userData={userData} transactions={transactions} />;
+      case 'FUEL_STATION_OWNER':
+        return <FuelStationOwnerDashboard userData={userData} transactions={transactions} />;
+      case 'FUEL_STATION_OPERATOR':
+        return <FuelStationOperatorDashboard userData={userData} transactions={transactions} />;
+      case 'ADMIN_USER':
+        return <AdminDashboard userData={userData} transactions={transactions} />;
+      default:
+        return <VehicleOwnerDashboard userData={userData} transactions={transactions} />;
+    }
   };
 
   if (isLoading) {
@@ -271,12 +303,12 @@ export default function DashboardPage() {
             <CloseIcon />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          <nav className="px-2 py-4 space-y-1">
+        <div className="flex-1 overflow-y-auto">          <nav className="px-2 py-4 space-y-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}
+                onClick={() => handleNavigation(item.href)}
                 className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
                   item.current
                     ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-100'
@@ -310,12 +342,12 @@ export default function DashboardPage() {
             </span>
           </div>
         </div>
-        <div className="flex-1 flex flex-col overflow-y-auto">
-          <nav className="flex-1 px-2 py-4 space-y-1">
+        <div className="flex-1 flex flex-col overflow-y-auto">          <nav className="flex-1 px-2 py-4 space-y-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}
+                onClick={() => handleNavigation(item.href)}
                 className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
                   item.current
                     ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-100'
@@ -337,14 +369,11 @@ export default function DashboardPage() {
             <span className="ml-3">Sign out</span>
           </button>
         </div>
-      </div>
-
-      {/* Main content area */}
+      </div>      {/* Main content area */}
       <div className="lg:pl-64">
         {/* Top navigation */}
         <header className="bg-white dark:bg-gray-800 shadow-sm">
-          <div className="flex justify-between items-center h-16 px-4 sm:px-6 lg:px-8">
-            <button
+          <div className="flex justify-between items-center h-16 px-4 sm:px-6 lg:px-8">            <button
               type="button"
               className="lg:hidden p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none"
               onClick={() => setSidebarOpen(true)}
@@ -353,199 +382,23 @@ export default function DashboardPage() {
               <MenuIcon />
             </button>
             <div className="flex-1 flex justify-between items-center lg:justify-end">
-              <div className="ml-4 flex items-center md:ml-6">
-                <span className="text-gray-700 dark:text-gray-300 text-sm mr-4 hidden md:block">
-                  Welcome, {userData?.name || 'User'}
-                </span>
-                <div className="relative">
-                  <div className="h-8 w-8 rounded-full bg-green-600 flex items-center justify-center text-white font-medium text-sm">
-                    {userData?.name?.charAt(0) || 'U'}
-                  </div>
-                </div>
-              </div>
+              <UserInfoHeader userData={userData} onLogout={handleLogout} />
             </div>
           </div>
-        </header>
-
-        {/* Main content */}
+        </header>        {/* Main content */}
         <main className="px-4 sm:px-6 lg:px-8 py-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              Manage your fuel quota and view transaction history
-            </p>
-          </div>
+          {userData && (
+            <>
+              <RoleDashboardHeader role={userData.role} />
+              <QuickActions role={userData.role} />
+            </>
+          )}
 
-          {/* Quick Info Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
-            {/* Fuel Quota Card */}
-            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-green-100 dark:bg-green-900 rounded-md p-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                        Available Fuel Quota
-                      </dt>
-                      <dd>
-                        <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {userData?.quota?.remaining || 0} Liters
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 px-5 py-3">
-                <div className="text-sm">
-                  <span className="font-medium text-green-600 dark:text-green-400">
-                    {((userData?.quota?.remaining || 0) / (userData?.quota?.total || 1) * 100).toFixed(0)}% remaining
-                  </span>
-                  <span className="text-gray-500 dark:text-gray-400"> of your monthly quota</span>
-                </div>
-              </div>
-            </div>
+          {/* Render role-specific dashboard content */}
+          {renderDashboardContent()}
 
-            {/* User Info Card */}
-            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900 rounded-md p-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                        Account Type
-                      </dt>
-                      <dd>
-                        <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                          {userData?.role || 'User'}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 px-5 py-3">
-                <Link href="/profile" className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
-                  View profile
-                </Link>
-              </div>
-            </div>
-
-            {/* Quick Actions Card */}
-            <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">
-                  Quick Actions
-                </h3>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Link href="/fuel-request" className="rounded-md bg-green-50 dark:bg-green-900/30 px-3 py-2 text-center text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50">
-                    Request Fuel
-                  </Link>
-                  <Link href="/transactions" className="rounded-md bg-gray-50 dark:bg-gray-700 px-3 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
-                    View History
-                  </Link>
-                  <Link href="/stations" className="rounded-md bg-gray-50 dark:bg-gray-700 px-3 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
-                    Find Stations
-                  </Link>
-                  <Link href="/support" className="rounded-md bg-gray-50 dark:bg-gray-700 px-3 py-2 text-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
-                    Support
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Recent Transactions */}
-          <div className="bg-white dark:bg-gray-800 shadow rounded-lg mb-6">
-            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">
-                Recent Transactions
-              </h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      ID
-                    </th>
-                    <th scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th scope="col" className="hidden md:table-cell px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Location
-                    </th>
-                    <th scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {transactions.map((transaction) => (
-                    <tr key={transaction.id}>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {transaction.id}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {transaction.date}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {transaction.type}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {transaction.amount} L
-                      </td>
-                      <td className="hidden md:table-cell px-5 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {transaction.location}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          transaction.status === 'Completed' 
-                            ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300' 
-                            : transaction.status === 'Pending'
-                            ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-300'
-                            : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-300'
-                        }`}>
-                          {transaction.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {transactions.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-5 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 text-center">
-                        No transactions found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-5 py-3 flex justify-end">
-              <Link href="/transactions" className="text-sm font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300">
-                View all transactions →
-              </Link>
-            </div>
-          </div>
-
-          {/* Announcements */}
-          <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
+          {/* Announcements - shown to all users */}
+          <div className="bg-white dark:bg-gray-800 shadow rounded-lg mt-6">
             <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">
                 Announcements
@@ -565,7 +418,7 @@ export default function DashboardPage() {
                     </h3>
                     <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-400">
                       <p>
-                        Monthly fuel quota will be updated on the 1st of May. Please plan your fuel consumption accordingly.
+                        Monthly fuel quota will be updated on the 1st of June. Please plan your fuel consumption accordingly.
                       </p>
                     </div>
                   </div>
@@ -585,7 +438,7 @@ export default function DashboardPage() {
                     </h3>
                     <div className="mt-2 text-sm text-blue-700 dark:text-blue-400">
                       <p>
-                        The system will undergo maintenance on April 25th from 1:00 AM to 3:00 AM. Some features may be temporarily unavailable.
+                        The system will undergo maintenance on May 28th from 1:00 AM to 3:00 AM. Some features may be temporarily unavailable.
                       </p>
                     </div>
                   </div>
