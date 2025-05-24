@@ -1,408 +1,127 @@
-import { Router, Request, Response, NextFunction } from "express";
-import { createLogger } from '../utils/logger';
-import AuthService, { RegisterUserData, LoginCredentials, ForgotPasswordData, ResetPasswordData } from '../services/auth.services';
-import { UserType, District, Province } from '@prisma/client';
+import { Router } from "express";
+import { authenticateJWT } from '../utils/jwt.middleware';
+import { requirePermission } from '../utils/permissions';
+import AuthController from '../controllers/auth.controller';
 
 const authRouter = Router();
-const logger = createLogger('AuthRoutes');
+const authController = new AuthController();
 
-// Initialize auth service
-const authService = new AuthService();
+/**
+ * POST /api/auth/register
+ * Register a new user
+ */
+authRouter.post('/register', authController.register.bind(authController));
 
-// Validation middleware
-const validateRegistration = (req: Request, res: Response, next: NextFunction): void => {
-  const { email, password, firstName, lastName, phoneNumber, nicNumber, userType, address } = req.body;
+/**
+ * POST /api/auth/login
+ * Authenticate user and generate JWT token
+ */
+authRouter.post('/login', authController.login.bind(authController));
 
-  // Check required fields
-  if (!email || !password || !firstName || !lastName || !phoneNumber || !nicNumber || !userType || !address) {
-    res.status(400).json({
-      success: false,
-      message: 'All fields are required',
-      required: ['email', 'password', 'firstName', 'lastName', 'phoneNumber', 'nicNumber', 'userType', 'address']
-    });
-    return;
-  }
+/**
+ * POST /api/auth/logout
+ * Logout user and invalidate session
+ */
+authRouter.post('/logout', authenticateJWT, authController.logout.bind(authController));
 
-  // Validate email
-  if (!authService.validateEmail(email)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid email format'
-    });
-    return;
-  }
+/**
+ * GET /api/auth/verify-token
+ * Verify JWT token validity
+ */
+authRouter.get('/verify-token', authController.verifyToken.bind(authController));
 
-  // Validate password
-  const passwordValidation = authService.validatePassword(password);
-  if (!passwordValidation.isValid) {
-    res.status(400).json({
-      success: false,
-      message: 'Password does not meet requirements',
-      errors: passwordValidation.errors
-    });
-    return;
-  }
+/**
+ * POST /api/auth/send-email-verification
+ * Send email verification code
+ */
+authRouter.post('/send-email-verification', authenticateJWT, authController.sendEmailVerification.bind(authController));
 
-  // Validate phone number
-  if (!authService.validatePhoneNumber(phoneNumber)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid Sri Lankan phone number format'
-    });
-    return;
-  }
+/**
+ * POST /api/auth/send-phone-verification
+ * Send phone verification code
+ */
+authRouter.post('/send-phone-verification', authenticateJWT, authController.sendPhoneVerification.bind(authController));
 
-  // Validate NIC number
-  if (!authService.validateNicNumber(nicNumber)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid Sri Lankan NIC number format'
-    });
-    return;
-  }
+/**
+ * POST /api/auth/verify-code
+ * Verify email or phone verification code
+ */
+authRouter.post('/verify-code', authenticateJWT, authController.verifyCode.bind(authController));
 
-  // Validate user type
-  if (!Object.values(UserType).includes(userType)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid user type',
-      validTypes: Object.values(UserType)
-    });
-    return;
-  }
+/**
+ * POST /api/auth/forgot-password
+ * Request password reset
+ */
+authRouter.post('/forgot-password', authController.forgotPassword.bind(authController));
 
-  // Validate address
-  if (!address.addressLine1 || !address.city || !address.district || !address.province) {
-    res.status(400).json({
-      success: false,
-      message: 'Address must include addressLine1, city, district, and province'
-    });
-    return;
-  }
+/**
+ * POST /api/auth/reset-password
+ * Reset password with verification code
+ */
+authRouter.post('/reset-password', authController.resetPassword.bind(authController));
 
-  // Validate district and province enums
-  if (!Object.values(District).includes(address.district)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid district',
-      validDistricts: Object.values(District)
-    });
-    return;
-  }
+/**
+ * POST /api/auth/change-password
+ * Change password for authenticated user
+ */
+authRouter.post('/change-password', authenticateJWT, authController.changePassword.bind(authController));
 
-  if (!Object.values(Province).includes(address.province)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid province',
-      validProvinces: Object.values(Province)
-    });
-    return;
-  }
+/**
+ * GET /api/auth/profile
+ * Get user profile information
+ */
+authRouter.get('/profile', authenticateJWT, authController.getProfile.bind(authController));
 
-  next();
-};
+/**
+ * POST /api/auth/assign-role
+ * Assign role to user (Admin only)
+ */
+authRouter.post('/assign-role', 
+  authenticateJWT, 
+  requirePermission('user', 'update'), 
+  authController.assignRole.bind(authController)
+);
 
-const validateLogin = (req: Request, res: Response, next: NextFunction): void => {
-  const { email, password } = req.body;
+/**
+ * POST /api/auth/remove-role
+ * Remove role from user (Admin only)
+ */
+authRouter.post('/remove-role', 
+  authenticateJWT, 
+  requirePermission('user', 'update'), 
+  authController.removeRole.bind(authController)
+);
 
-  if (!email || !password) {
-    res.status(400).json({
-      success: false,
-      message: 'Email and password are required'
-    });
-    return;
-  }
+/**
+ * GET /api/auth/user-roles/:userId
+ * Get user roles (Admin only)
+ */
+authRouter.get('/user-roles/:userId', 
+  authenticateJWT, 
+  requirePermission('user', 'read'), 
+  authController.getUserRoles.bind(authController)
+);
 
-  if (!authService.validateEmail(email)) {
-    res.status(400).json({
-      success: false,
-      message: 'Invalid email format'
-    });
-    return;
-  }
+/**
+ * GET /api/auth/my-roles
+ * Get current user's roles
+ */
+authRouter.get('/my-roles', authenticateJWT, authController.getMyRoles.bind(authController));
 
-  next();
-};
+/**
+ * DELETE /api/auth/sessions/cleanup
+ * Clean up expired sessions (Admin only)
+ */
+authRouter.delete('/sessions/cleanup', 
+  authenticateJWT, 
+  requirePermission('admin', 'manage'), 
+  authController.cleanupSessions.bind(authController)
+);
 
-// POST /api/auth/register - Register new account
-authRouter.post('/register', validateRegistration, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userData: RegisterUserData = req.body;
-    
-    logger.info(`Registration attempt for email: ${userData.email}`);
-    
-    const result = await authService.register(userData);
-    
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: result
-    });
-
-  } catch (error: any) {
-    logger.error('Registration error:', error);
-    
-    // Handle specific validation errors
-    if (error.message.includes('already exists')) {
-      res.status(409).json({
-        success: false,
-        message: error.message
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Registration failed. Please try again.'
-    });
-  }
-});
-
-// POST /api/auth/login - Login
-authRouter.post('/login', validateLogin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const credentials: LoginCredentials = req.body;
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const userAgent = req.get('User-Agent');
-    
-    logger.info(`Login attempt for email: ${credentials.email}`);
-    
-    const result = await authService.login(credentials, ipAddress, userAgent);
-    
-    // Set HTTP-only cookie for refresh token (optional)
-    res.cookie('refreshToken', result.tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
-    
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        user: result.user,
-        accessToken: result.tokens.accessToken,
-        expiresIn: result.tokens.expiresIn
-      }
-    });
-
-  } catch (error: any) {
-    logger.error('Login error:', error);
-    
-    // Handle specific authentication errors
-    if (error.message.includes('Invalid email or password') || 
-        error.message.includes('deactivated')) {
-      res.status(401).json({
-        success: false,
-        message: error.message
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Login failed. Please try again.'
-    });
-  }
-});
-
-// POST /api/auth/logout - Logout
-authRouter.post('/logout', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const sessionId = req.headers['x-session-id'] as string;
-    
-    if (!sessionId) {
-      res.status(400).json({
-        success: false,
-        message: 'Session ID is required in headers'
-      });
-      return;
-    }
-    
-    await authService.logout(sessionId);
-    
-    // Clear refresh token cookie
-    res.clearCookie('refreshToken');
-    
-    res.status(200).json({
-      success: true,
-      message: 'Logout successful'
-    });
-
-  } catch (error: any) {
-    logger.error('Logout error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Logout failed. Please try again.'
-    });
-  }
-});
-
-// POST /api/auth/forgot-password - Forgot password
-authRouter.post('/forgot-password', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email }: ForgotPasswordData = req.body;
-    
-    if (!email) {
-      res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-      return;
-    }
-
-    if (!authService.validateEmail(email)) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid email format'
-      });
-      return;
-    }
-    
-    logger.info(`Password reset request for email: ${email}`);
-    
-    const result = await authService.forgotPassword({ email });
-    
-    res.status(200).json({
-      success: true,
-      message: result.message
-    });
-
-  } catch (error: any) {
-    logger.error('Forgot password error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process password reset request. Please try again.'
-    });
-  }
-});
-
-// POST /api/auth/reset-password - Reset password
-authRouter.post('/reset-password', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { token, newPassword }: ResetPasswordData = req.body;
-    
-    if (!token || !newPassword) {
-      res.status(400).json({
-        success: false,
-        message: 'Token and new password are required'
-      });
-      return;
-    }
-
-    // Validate new password
-    const passwordValidation = authService.validatePassword(newPassword);
-    if (!passwordValidation.isValid) {
-      res.status(400).json({
-        success: false,
-        message: 'New password does not meet requirements',
-        errors: passwordValidation.errors
-      });
-      return;
-    }
-    
-    logger.info('Password reset attempt');
-    
-    const result = await authService.resetPassword({ token, newPassword });
-    
-    res.status(200).json({
-      success: true,
-      message: result.message
-    });
-
-  } catch (error: any) {
-    logger.error('Reset password error:', error);
-    
-    if (error.message.includes('Invalid') || error.message.includes('expired')) {
-      res.status(400).json({
-        success: false,
-        message: error.message
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Failed to reset password. Please try again.'
-    });
-  }
-});
-
-// GET /api/auth/verify-token - Verify JWT token (for protected routes)
-authRouter.get('/verify-token', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({
-        success: false,
-        message: 'Authorization token is required'
-      });
-      return;
-    }
-
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    
-    const user = await authService.verifyToken(token);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Token is valid',
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          userType: user.userType,
-          isActive: user.isActive,
-          emailVerified: user.emailVerified,
-          roles: user.userRoles?.map(ur => ur.role.name) || []
-        }
-      }
-    });
-
-  } catch (error: any) {
-    logger.error('Token verification error:', error);
-    
-    if (error.message.includes('Invalid') || error.message.includes('expired')) {
-      res.status(401).json({
-        success: false,
-        message: error.message
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Token verification failed'
-    });
-  }
-});
-
-// GET /api/auth/session/cleanup - Clean up expired sessions (admin endpoint)
-authRouter.delete('/sessions/cleanup', async (req: Request, res: Response): Promise<void> => {
-  try {
-    // TODO: Add admin authentication middleware here
-    
-    const deletedCount = await authService.cleanupExpiredSessions();
-    
-    res.status(200).json({
-      success: true,
-      message: `Cleaned up ${deletedCount} expired sessions`
-    });
-
-  } catch (error: any) {
-    logger.error('Session cleanup error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to cleanup sessions'
-    });
-  }
-});
+/**
+ * GET /api/auth/health
+ * Health check endpoint
+ */
+authRouter.get('/health', authController.health.bind(authController));
 
 export default authRouter;
