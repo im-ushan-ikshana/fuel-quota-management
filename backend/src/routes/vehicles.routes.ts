@@ -66,17 +66,17 @@ vehicleRouter.post('/register',
 );
 
 /**
- * GET /api/vehicles/validate-dmt?registrationNumber=ABC-1234
- * Validate vehicle against DMT database
+ * POST /api/vehicles/validate-dmt
+ * Validate vehicle registration with DMT database
  */
-vehicleRouter.get('/validate-dmt',
+vehicleRouter.post('/validate-dmt',
   authenticateJWT,
-  requirePermission('vehicle', 'validate'),
-  async (req: Request, res: Response): Promise<void> => {
+  requirePermission('vehicle', 'read'),
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { registrationNumber } = req.query;
+      const { registrationNumber } = req.body;
 
-      if (!registrationNumber || typeof registrationNumber !== 'string') {
+      if (!registrationNumber) {
         res.status(400).json({
           success: false,
           message: 'Registration number is required',
@@ -84,25 +84,23 @@ vehicleRouter.get('/validate-dmt',
         return;
       }
 
+      logger.info(`DMT validation request for: ${registrationNumber}`);
+
       const dmtValidation = await vehicleService.validateVehicleWithDMT(registrationNumber);
 
       if (dmtValidation) {
         res.status(200).json({
+          valid: true,
           success: true,
-          message: 'Vehicle validation successful',
-          data: {
-            isValid: true,
-            validationData: dmtValidation,
-          },
+          message: 'DMT validation successful',
+          data: dmtValidation,
         });
       } else {
         res.status(404).json({
+          valid: false,
           success: false,
           message: 'Vehicle not found in DMT database',
-          data: {
-            isValid: false,
-            registrationNumber,
-          },
+          data: null,
         });
       }
 
@@ -323,6 +321,65 @@ vehicleRouter.get('/:id/quota',
       res.status(500).json({
         success: false,
         message: 'Internal server error while fetching quota information',
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/vehicles/dmt-validations
+ * Get all DMT validations for testing purposes
+ */
+vehicleRouter.get('/dmt-validations',
+  authenticateJWT,
+  requirePermission('vehicle', 'read'),
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      logger.info('Fetching all DMT validations');
+
+      const dmtValidations = await vehicleService.getAllDMTValidations();
+
+      res.status(200).json({
+        success: true,
+        message: 'DMT validations retrieved successfully',
+        count: dmtValidations.length,
+        data: dmtValidations,
+      });
+
+    } catch (error) {
+      logger.error('Error fetching DMT validations:', error);
+      
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while fetching DMT validations',
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/vehicles/dmt-count
+ * Get count of DMT validations
+ */
+vehicleRouter.get('/dmt-count',
+  authenticateJWT,
+  requirePermission('vehicle', 'read'),
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const count = await vehicleService.getDMTValidationsCount();
+
+      res.status(200).json({
+        success: true,
+        count: count,
+        message: 'Total DMT validations in database',
+      });
+
+    } catch (error) {
+      logger.error('Error counting DMT validations:', error);
+      
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while counting DMT validations',
       });
     }
   }
