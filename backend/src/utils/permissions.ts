@@ -68,13 +68,12 @@ export const checkUserPermission = async (
     if (!userWithRoles.isActive) {
       logger.warn(`User is inactive: ${userId}`);
       return false;
-    }
-
-    // Check if user has the required permission
+    }    // Check if user has the required permission (case-insensitive)
     const hasPermission = userWithRoles.userRoles.some((userRole: any) =>
+      userRole.isActive &&
       userRole.role.permissions.some((rolePermission: any) =>
-        rolePermission.permission.module === module &&
-        rolePermission.permission.action === action &&
+        rolePermission.permission.module.toLowerCase() === module.toLowerCase() &&
+        rolePermission.permission.action.toLowerCase() === action.toLowerCase() &&
         rolePermission.permission.isActive
       )
     );
