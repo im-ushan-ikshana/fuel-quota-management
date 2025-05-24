@@ -11,3 +11,5 @@ node_modules
 
 #remove help docs in the root directory - types (.md)
 docs/*-temp.md 
+
+dist
