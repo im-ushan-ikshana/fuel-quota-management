@@ -1,21 +1,12 @@
-import bcrypt from 'bcrypt';
+import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { createLogger } from '../utils/logger';
-import AuthRepository, { CreateUserData, UserWithRelations } from '../repositories/auth.repo';
+import AuthRepository, { CreateUserData, UserWithRelations, SessionData, CreateAddressData } from '../repositories/auth.repo';
+import SmsService from './sms.services';
 import { UserType, District, Province } from '@prisma/client';
 
 const logger = createLogger('AuthService');
-
-// Environment variables for JWT
-const JWT_SECRET = process.env.JWT_SECRET!;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
-const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-
-// Validate JWT secrets
-if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
-  throw new Error('JWT secrets must be defined in environment variables');
-}
 
 export interface RegisterUserData {
   email: string;
@@ -25,62 +16,55 @@ export interface RegisterUserData {
   phoneNumber: string;
   nicNumber: string;
   userType: UserType;
-  address: {
-    addressLine1: string;
-    addressLine2?: string;
-    city: string;
-    district: District;
-    province: Province;
-  };
+  address: CreateAddressData;
 }
 
-export interface LoginCredentials {
-  email: string;
+export interface LoginData {
+  email?: string;
+  phoneNumber?: string;
   password: string;
 }
 
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: string;
-}
-
 export interface AuthResponse {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    phoneNumber: string;
-    userType: UserType;
-    isActive: boolean;
-    emailVerified: boolean;
-    roles: string[];
-  };
-  tokens: AuthTokens;
+  success: boolean;
+  message: string;
+  user?: Omit<UserWithRelations, 'password'>;
+  token?: string;
+  sessionId?: string;
 }
 
-export interface ForgotPasswordData {
-  email: string;
+export interface VerificationData {
+  userId: string;
+  code: string;
+  type: 'email' | 'phone';
 }
 
-export interface ResetPasswordData {
-  token: string;
-  newPassword: string;
+export interface PasswordResetData {
+  email?: string;
+  code?: number;
+  phoneNumber?: string;
+  newPassword?: string;
+  resetCode?: string;
 }
 
 class AuthService {
   private authRepository: AuthRepository;
-  private readonly saltRounds = 12;
+  private smsService?: SmsService;
+  private verificationCodes: Map<string, { code: string; expiresAt: Date; type: string }> = new Map();
 
   constructor() {
     this.authRepository = new AuthRepository();
+    try {
+      this.smsService = new SmsService();
+    } catch (error) {
+      logger.warn('SMS service not available:', error);
+    }
   }
 
   /**
    * Register a new user
    */
-  async register(userData: RegisterUserData): Promise<AuthResponse> {
+  async registerUser(userData: RegisterUserData, ipAddress?: string, userAgent?: string): Promise<AuthResponse> {
     try {
       // Check if user already exists
       const existingUser = await this.authRepository.checkUserExists(
@@ -90,25 +74,34 @@ class AuthService {
       );
 
       if (existingUser.emailExists) {
-        throw new Error('User with this email already exists');
+        return {
+          success: false,
+          message: 'User with this email already exists'
+        };
       }
 
       if (existingUser.phoneExists) {
-        throw new Error('User with this phone number already exists');
+        return {
+          success: false,
+          message: 'User with this phone number already exists'
+        };
       }
 
       if (existingUser.nicExists) {
-        throw new Error('User with this NIC number already exists');
+        return {
+          success: false,
+          message: 'User with this NIC number already exists'
+        };
       }
-
-      // Hash password
-      const hashedPassword = await this.hashPassword(userData.password);
 
       // Create address first
       const address = await this.authRepository.createAddress(userData.address);
 
-      // Prepare user data
-      const userCreateData: CreateUserData = {
+      // Hash password
+      const hashedPassword = await bcrypt.hash(userData.password, 12);
+
+      // Create user
+      const createUserData: CreateUserData = {
         email: userData.email,
         password: hashedPassword,
         firstName: userData.firstName,
@@ -116,339 +109,514 @@ class AuthService {
         phoneNumber: userData.phoneNumber,
         nicNumber: userData.nicNumber,
         userType: userData.userType,
-        addressId: address.id,
+        addressId: address.id
       };
 
-      // Create user
-      const user = await this.authRepository.createUser(userCreateData);
+      const user = await this.authRepository.createUser(createUserData);
 
-      // Generate tokens
-      const tokens = await this.generateTokens(user);
+      // Generate verification codes
+      await this.sendEmailVerification(user.id, user.email);
+      await this.sendPhoneVerification(user.id, user.phoneNumber);
 
-      // Create session
-      const sessionExpiresAt = new Date();
-      sessionExpiresAt.setHours(sessionExpiresAt.getHours() + 24); // 24 hours
+      // Send welcome SMS
+      if (this.smsService) {
+        await this.smsService.sendWelcomeSms(user.phoneNumber, user.firstName);
+      }
 
-      await this.authRepository.createSession({
-        userId: user.id,
-        expiresAt: sessionExpiresAt
-      });
-
-      logger.info(`User registered successfully: ${user.email}`);
+      // Remove password from response
+      const { password, ...userWithoutPassword } = user;
 
       return {
-        user: this.formatUserResponse(user),
-        tokens
+        success: true,
+        message: 'User registered successfully. Please verify your email and phone number.',
+        user: userWithoutPassword
       };
-
     } catch (error) {
-      logger.error('Registration error:', error);
-      throw error;
+      logger.error('Error registering user:', error);
+      return {
+        success: false,
+        message: 'Registration failed. Please try again.'
+      };
     }
   }
 
   /**
    * Login user
    */
-  async login(credentials: LoginCredentials, ipAddress?: string, userAgent?: string): Promise<AuthResponse> {
+  async loginUser(loginData: LoginData, ipAddress?: string, userAgent?: string): Promise<AuthResponse> {
     try {
-      // Find user by email
-      const user = await this.authRepository.findUserByEmail(credentials.email);
+      let user: UserWithRelations | null = null;
 
-      if (!user) {
-        throw new Error('Invalid email or password');
+      // Find user by email or phone
+      if (loginData.email) {
+        user = await this.authRepository.findUserByEmail(loginData.email);
+      } else if (loginData.phoneNumber) {
+        user = await this.authRepository.findUserByPhoneNumber(loginData.phoneNumber);
       }
 
+      if (!user) {
+        return {
+          success: false,
+          message: 'Invalid credentials'
+        };
+      }
+
+      // Check if user is active
       if (!user.isActive) {
-        throw new Error('Account is deactivated. Please contact support.');
+        return {
+          success: false,
+          message: 'Account is deactivated. Please contact support.'
+        };
       }
 
       // Verify password
-      const isPasswordValid = await this.verifyPassword(credentials.password, user.password);
-
+      const isPasswordValid = await bcrypt.compare(loginData.password, user.password);
       if (!isPasswordValid) {
-        throw new Error('Invalid email or password');
+        return {
+          success: false,
+          message: 'Invalid credentials'
+        };
       }
 
       // Update last login
       await this.authRepository.updateLastLogin(user.id);
 
-      // Generate tokens
-      const tokens = await this.generateTokens(user);
-
       // Create session
-      const sessionExpiresAt = new Date();
-      sessionExpiresAt.setHours(sessionExpiresAt.getHours() + 24); // 24 hours
-
-      await this.authRepository.createSession({
+      const sessionData: SessionData = {
         userId: user.id,
         ipAddress,
         userAgent,
-        expiresAt: sessionExpiresAt
-      });
-
-      logger.info(`User logged in successfully: ${user.email}`);
-
-      return {
-        user: this.formatUserResponse(user),
-        tokens
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
       };
 
+      const session = await this.authRepository.createSession(sessionData);
+
+      // Generate JWT token
+      const token = this.generateToken(user.id, session.sessionId);
+
+      // Remove password from response
+      const { password, ...userWithoutPassword } = user;
+
+      return {
+        success: true,
+        message: 'Login successful',
+        user: userWithoutPassword,
+        token,
+        sessionId: session.sessionId
+      };
     } catch (error) {
-      logger.error('Login error:', error);
-      throw error;
+      logger.error('Error logging in user:', error);
+      return {
+        success: false,
+        message: 'Login failed. Please try again.'
+      };
     }
   }
 
   /**
    * Logout user
    */
-  async logout(sessionId: string): Promise<void> {
+  async logoutUser(sessionId: string): Promise<{ success: boolean; message: string }> {
     try {
       await this.authRepository.invalidateSession(sessionId);
-      logger.info(`User logged out: session ${sessionId}`);
+      return {
+        success: true,
+        message: 'Logout successful'
+      };
     } catch (error) {
-      logger.error('Logout error:', error);
-      throw error;
+      logger.error('Error logging out user:', error);
+      return {
+        success: false,
+        message: 'Logout failed'
+      };
     }
   }
 
   /**
-   * Forgot password - generate reset token and send email
+   * Verify JWT token and session
    */
-  async forgotPassword(data: ForgotPasswordData): Promise<{ message: string }> {
+  async verifyToken(token: string): Promise<{ valid: boolean; user?: UserWithRelations; sessionId?: string }> {
     try {
-      // Find user by email
-      const user = await this.authRepository.findUserByEmail(data.email);
-
-      if (!user) {
-        // For security, we don't reveal if the email exists or not
-        return { message: 'If the email exists, a password reset link has been sent.' };
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
+      
+      const session = await this.authRepository.findSessionById(decoded.sessionId);
+      if (!session) {
+        return { valid: false };
       }
 
-      if (!user.isActive) {
-        throw new Error('Account is deactivated. Please contact support.');
-      }      // Generate reset token (valid for 1 hour)
-      const resetToken = jwt.sign(
-        { 
-          userId: user.id, 
-          type: 'password_reset',
-          email: user.email 
-        },
-        JWT_SECRET,
-        { expiresIn: '1h' } as jwt.SignOptions
-      );
+      // Update session last accessed
+      await this.authRepository.updateSessionLastAccessed(decoded.sessionId);
 
-      // TODO: Send email with reset token
-      // Here you would integrate with your email service (SendGrid, etc.)
-      // For now, we'll just log it
-      logger.info(`Password reset token generated for ${user.email}: ${resetToken}`);
-
-      // In production, you would send this via email
-      // await emailService.sendPasswordResetEmail(user.email, resetToken);
-
-      return { message: 'If the email exists, a password reset link has been sent.' };
-
+      return {
+        valid: true,
+        user: session.user,
+        sessionId: decoded.sessionId
+      };
     } catch (error) {
-      logger.error('Forgot password error:', error);
-      throw error;
+      logger.error('Token verification failed:', error);
+      return { valid: false };
     }
   }
 
   /**
-   * Reset password using token
+   * Send email verification
    */
-  async resetPassword(data: ResetPasswordData): Promise<{ message: string }> {
-    try {      // Verify reset token
-      const decoded = jwt.verify(data.token, JWT_SECRET) as any;
+  async sendEmailVerification(userId: string, email: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const code = this.generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-      if (decoded.type !== 'password_reset') {
-        throw new Error('Invalid reset token');
+      this.verificationCodes.set(`email_${userId}`, { code, expiresAt, type: 'email' });
+
+      // TODO: Implement email sending service
+      logger.info(`Email verification code for ${email}: ${code}`);
+
+      return {
+        success: true,
+        message: 'Verification code sent to email'
+      };
+    } catch (error) {
+      logger.error('Error sending email verification:', error);
+      return {
+        success: false,
+        message: 'Failed to send verification code'
+      };
+    }
+  }
+
+  /**
+   * Send phone verification
+   */
+  async sendPhoneVerification(userId: string, phoneNumber: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const code = this.generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      this.verificationCodes.set(`phone_${userId}`, { code, expiresAt, type: 'phone' });
+
+      // Send SMS
+      if (this.smsService) {
+        const result = await this.smsService.sendVerificationCode(phoneNumber, code);
+        if (!result.success) {
+          return {
+            success: false,
+            message: 'Failed to send SMS verification code'
+          };
+        }
       }
 
-      // Find user
-      const user = await this.authRepository.findUserById(decoded.userId);
+      return {
+        success: true,
+        message: 'Verification code sent to phone'
+      };
+    } catch (error) {
+      logger.error('Error sending phone verification:', error);
+      return {
+        success: false,
+        message: 'Failed to send verification code'
+      };
+    }
+  }
+
+  /**
+   * Verify email or phone
+   */
+  async verifyCode(verificationData: VerificationData): Promise<{ success: boolean; message: string }> {
+    try {
+      const key = `${verificationData.type}_${verificationData.userId}`;
+      const storedData = this.verificationCodes.get(key);
+
+      if (!storedData) {
+        return {
+          success: false,
+          message: 'Invalid or expired verification code'
+        };
+      }
+
+      if (new Date() > storedData.expiresAt) {
+        this.verificationCodes.delete(key);
+        return {
+          success: false,
+          message: 'Verification code has expired'
+        };
+      }
+
+      if (storedData.code !== verificationData.code) {
+        return {
+          success: false,
+          message: 'Invalid verification code'
+        };
+      }
+
+      // Update verification status
+      if (verificationData.type === 'email') {
+        await this.authRepository.updateEmailVerification(verificationData.userId, true);
+      } else {
+        await this.authRepository.updatePhoneVerification(verificationData.userId, true);
+      }
+
+      this.verificationCodes.delete(key);
+
+      return {
+        success: true,
+        message: `${verificationData.type} verified successfully`
+      };
+    } catch (error) {
+      logger.error('Error verifying code:', error);
+      return {
+        success: false,
+        message: 'Verification failed'
+      };
+    }
+  }
+
+  /**
+   * Request password reset
+   */
+  async requestPasswordReset(resetData: Pick<PasswordResetData, 'email' | 'phoneNumber'>): Promise<{ success: boolean; message: string }> {
+    try {
+      let user: UserWithRelations | null = null;
+
+      if (resetData.email) {
+        user = await this.authRepository.findUserByEmail(resetData.email);
+      } else if (resetData.phoneNumber) {
+        user = await this.authRepository.findUserByPhoneNumber(resetData.phoneNumber);
+      }
 
       if (!user) {
-        throw new Error('Invalid reset token');
+        // Don't reveal if user exists or not
+        return {
+          success: true,
+          message: 'If the account exists, a reset code has been sent'
+        };
       }
 
-      if (!user.isActive) {
-        throw new Error('Account is deactivated. Please contact support.');
+      const code = this.generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      this.verificationCodes.set(`reset_${user.id}`, { code, expiresAt, type: 'reset' });
+
+      // Send reset code via SMS
+      if (this.smsService) {
+        await this.smsService.sendPasswordResetCode(user.phoneNumber, code);
+      }
+
+      return {
+        success: true,
+        message: 'Password reset code sent'
+      };
+    } catch (error) {
+      logger.error('Error requesting password reset:', error);
+      return {
+        success: false,
+        message: 'Failed to send reset code'
+      };
+    }
+  }
+
+  /**
+   * Reset password
+   */
+  async resetPassword(resetData: Required<PasswordResetData>): Promise<{ success: boolean; message: string }> {
+    try {
+      let user: UserWithRelations | null = null;
+
+      if (resetData.email) {
+        user = await this.authRepository.findUserByEmail(resetData.email);
+      } else if (resetData.phoneNumber) {
+        user = await this.authRepository.findUserByPhoneNumber(resetData.phoneNumber);
+      }
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'Invalid request'
+        };
+      }
+
+      const key = `reset_${user.id}`;
+      const storedData = this.verificationCodes.get(key);
+
+      if (!storedData || storedData.code !== resetData.resetCode) {
+        return {
+          success: false,
+          message: 'Invalid or expired reset code'
+        };
+      }
+
+      if (new Date() > storedData.expiresAt) {
+        this.verificationCodes.delete(key);
+        return {
+          success: false,
+          message: 'Reset code has expired'
+        };
       }
 
       // Hash new password
-      const hashedPassword = await this.hashPassword(data.newPassword);
-
-      // Update password
+      const hashedPassword = await bcrypt.hash(resetData.newPassword, 12);
       await this.authRepository.updateUserPassword(user.id, hashedPassword);
 
-      logger.info(`Password reset successfully for user: ${user.email}`);
+      this.verificationCodes.delete(key);
 
-      return { message: 'Password has been reset successfully.' };
-
+      return {
+        success: true,
+        message: 'Password reset successfully'
+      };
     } catch (error) {
-      if (error instanceof jwt.JsonWebTokenError) {
-        throw new Error('Invalid or expired reset token');
-      }
-      logger.error('Reset password error:', error);
-      throw error;
+      logger.error('Error resetting password:', error);
+      return {
+        success: false,
+        message: 'Password reset failed'
+      };
     }
   }
+
   /**
-   * Verify JWT token and return user
+   * Change password (for authenticated users)
    */
-  async verifyToken(token: string): Promise<UserWithRelations> {
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      
-      const user = await this.authRepository.findUserById(decoded.userId);
-      
-      if (!user || !user.isActive) {
-        throw new Error('Invalid token or user not found');
+      const user = await this.authRepository.findUserById(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found'
+        };
       }
 
-      return user;
-    } catch (error) {
-      if (error instanceof jwt.JsonWebTokenError) {
-        throw new Error('Invalid or expired token');
+      // Verify current password
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        return {
+          success: false,
+          message: 'Current password is incorrect'
+        };
       }
-      throw error;
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 12);
+      await this.authRepository.updateUserPassword(userId, hashedPassword);
+
+      return {
+        success: true,
+        message: 'Password changed successfully'
+      };
+    } catch (error) {
+      logger.error('Error changing password:', error);
+      return {
+        success: false,
+        message: 'Password change failed'
+      };
+    }
+  }
+
+  /**
+   * Get user profile
+   */
+  async getUserProfile(userId: string): Promise<{ success: boolean; user?: Omit<UserWithRelations, 'password'>; message: string }> {
+    try {
+      const user = await this.authRepository.findUserById(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found'
+        };
+      }
+
+      const { password, ...userWithoutPassword } = user;
+
+      return {
+        success: true,
+        user: userWithoutPassword,
+        message: 'Profile retrieved successfully'
+      };
+    } catch (error) {
+      logger.error('Error getting user profile:', error);
+      return {
+        success: false,
+        message: 'Failed to retrieve profile'
+      };
     }
   }
 
   /**
    * Clean up expired sessions
    */
-  async cleanupExpiredSessions(): Promise<number> {
+  async cleanupExpiredSessions(): Promise<void> {
     try {
       const deletedCount = await this.authRepository.deleteExpiredSessions();
       logger.info(`Cleaned up ${deletedCount} expired sessions`);
-      return deletedCount;
     } catch (error) {
-      logger.error('Session cleanup error:', error);
+      logger.error('Error cleaning up expired sessions:', error);
+    }
+  }
+
+  /**
+   * Generate JWT token
+   */
+  private generateToken(userId: string, sessionId: string): string {
+    return jwt.sign(
+      { userId, sessionId },
+      process.env.JWT_SECRET || 'fallback-secret',
+      { expiresIn: '24h' }
+    );
+  }
+
+  /**
+   * Generate verification code
+   */
+  private generateVerificationCode(): string {
+    return crypto.randomInt(100000, 999999).toString();
+  }
+
+  /**
+   * Assign role to user
+   */
+  async assignRole(userId: string, roleId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.authRepository.assignUserRole(userId, roleId);
+      return {
+        success: true,
+        message: 'Role assigned successfully'
+      };
+    } catch (error) {
+      logger.error('Error assigning role:', error);
+      return {
+        success: false,
+        message: 'Failed to assign role'
+      };
+    }
+  }
+
+  /**
+   * Remove role from user
+   */
+  async removeRole(userId: string, roleId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      await this.authRepository.removeUserRole(userId, roleId);
+      return {
+        success: true,
+        message: 'Role removed successfully'
+      };
+    } catch (error) {
+      logger.error('Error removing role:', error);
+      return {
+        success: false,
+        message: 'Failed to remove role'
+      };
+    }
+  }
+
+  /**
+   * Get user roles
+   */
+  async getUserRoles(userId: string) {
+    try {
+      return await this.authRepository.getUserRoles(userId);
+    } catch (error) {
+      logger.error('Error getting user roles:', error);
       throw error;
     }
-  }
-
-  // Private helper methods
-
-  /**
-   * Hash password
-   */
-  private async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, this.saltRounds);
-  }
-
-  /**
-   * Verify password
-   */
-  private async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-    return bcrypt.compare(password, hashedPassword);
-  }  /**
-   * Generate JWT tokens
-   */
-  private async generateTokens(user: UserWithRelations): Promise<AuthTokens> {
-    const payload = {
-      userId: user.id,
-      email: user.email,
-      userType: user.userType,
-      roles: user.userRoles?.map(ur => ur.role.name) || []
-    };
-
-    const accessToken = jwt.sign(payload, JWT_SECRET, { 
-      expiresIn: JWT_EXPIRES_IN 
-    } as jwt.SignOptions);
-
-    const refreshToken = jwt.sign(
-      { ...payload, type: 'refresh' }, 
-      JWT_REFRESH_SECRET, 
-      { expiresIn: JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions
-    );
-
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: JWT_EXPIRES_IN
-    };
-  }
-
-  /**
-   * Format user response (remove sensitive data)
-   */
-  private formatUserResponse(user: UserWithRelations) {
-    return {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phoneNumber: user.phoneNumber,
-      userType: user.userType,
-      isActive: user.isActive,
-      emailVerified: user.emailVerified,
-      roles: user.userRoles?.map(ur => ur.role.name) || []
-    };
-  }
-
-  /**
-   * Validate password strength
-   */
-  validatePassword(password: string): { isValid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (password.length < 8) {
-      errors.push('Password must be at least 8 characters long');
-    }
-
-    if (!/(?=.*[a-z])/.test(password)) {
-      errors.push('Password must contain at least one lowercase letter');
-    }
-
-    if (!/(?=.*[A-Z])/.test(password)) {
-      errors.push('Password must contain at least one uppercase letter');
-    }
-
-    if (!/(?=.*\d)/.test(password)) {
-      errors.push('Password must contain at least one number');
-    }
-
-    if (!/(?=.*[@$!%*?&])/.test(password)) {
-      errors.push('Password must contain at least one special character (@$!%*?&)');
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
-
-  /**
-   * Validate email format
-   */
-  validateEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  }
-
-  /**
-   * Validate Sri Lankan phone number
-   */
-  validatePhoneNumber(phoneNumber: string): boolean {
-    // Sri Lankan phone number pattern: +94XXXXXXXXX or 0XXXXXXXXX
-    const phoneRegex = /^(\+94|0)[1-9]\d{8}$/;
-    return phoneRegex.test(phoneNumber.replace(/\s/g, ''));
-  }
-
-  /**
-   * Validate Sri Lankan NIC number
-   */
-  validateNicNumber(nicNumber: string): boolean {
-    // Old format: 9 digits + V (e.g., 123456789V)
-    // New format: 12 digits (e.g., 199812345678)
-    const oldNicRegex = /^\d{9}[VvXx]$/;
-    const newNicRegex = /^\d{12}$/;
-    
-    return oldNicRegex.test(nicNumber) || newNicRegex.test(nicNumber);
   }
 }
 
