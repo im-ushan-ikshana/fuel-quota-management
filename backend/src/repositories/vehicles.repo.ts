@@ -2,6 +2,7 @@ import PrismaService from '../services/prisma.services';
 import { handlePrismaError } from '../utils/prisma.middleware';
 import { createLogger } from '../utils/logger';
 import { VehicleType, FuelType, Vehicle, DMTValidation, FuelTransaction } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = createLogger('VehicleRepository');
 
@@ -55,10 +56,9 @@ class VehicleRepository {
    * Register a new vehicle with owner details
    */
   async registerVehicle(vehicleData: CreateVehicleData): Promise<Vehicle> {
-    try {
-      return await this.prismaService.transaction(async (prisma) => {
-        // Generate QR code (simple UUID for now, can be enhanced)
-        const qrCode = `VH_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    try {      return await this.prismaService.transaction(async (prisma) => {
+        // Generate QR code using UUID v4
+        const qrCode = `qr_${uuidv4()}`;
           // Create vehicle
         const vehicle = await prisma.vehicle.create({
           data: {
