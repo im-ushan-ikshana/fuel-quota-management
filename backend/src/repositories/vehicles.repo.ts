@@ -93,45 +93,31 @@ class VehicleRepository {
       logger.error(`Error registering vehicle:`, error);
       throw handlePrismaError(error, 'registering vehicle');
     }
-  }
-
-  /**
-   * Validate vehicle against DMT database (mock implementation)
+  }  /**
+   * Validate vehicle against DMT database (query from dmt_validations table)
    */
   async validateWithDMT(registrationNumber: string): Promise<DMTValidationData | null> {
     try {
-      // Mock DMT validation - in real implementation, this would call external API
-      const mockDMTData: Record<string, DMTValidationData> = {
-        'ABC-1234': {
-          registrationNumber: 'ABC-1234',
-          chassisNumber: 'CH123456789',
-          engineNumber: 'EN987654321',
-          ownerNic: '123456789V',
-          ownerName: 'John Doe',
-        },
-        'XYZ-5678': {
-          registrationNumber: 'XYZ-5678',
-          chassisNumber: 'CH987654321',
-          engineNumber: 'EN123456789',
-          ownerNic: '987654321V',
-          ownerName: 'Jane Smith',
-        },
-        'DEF-9012': {
-          registrationNumber: 'DEF-9012',
-          chassisNumber: 'CH555666777',
-          engineNumber: 'EN777888999',
-          ownerNic: '555666777V',
-          ownerName: 'Mike Johnson',
-        },
-      };
-
-      const validationData = mockDMTData[registrationNumber.toUpperCase()];
+      logger.info(`Querying DMT validation for vehicle: ${registrationNumber}`);
       
-      if (validationData) {
-        logger.info(`DMT validation successful for vehicle: ${registrationNumber}`);
-        return validationData;
+      // Query the actual dmt_validations table in the database
+      const dmtValidation = await this.prismaService.getClient().dMTValidation.findFirst({
+        where: {
+          registrationNumber: registrationNumber.toUpperCase()
+        }
+      });
+
+      if (dmtValidation) {
+        logger.info(`DMT validation found for vehicle: ${registrationNumber}`);
+        return {
+          registrationNumber: dmtValidation.registrationNumber,
+          chassisNumber: dmtValidation.chassisNumber,
+          engineNumber: dmtValidation.engineNumber,
+          ownerNic: dmtValidation.ownerNic,
+          ownerName: dmtValidation.ownerName,
+        };
       } else {
-        logger.warn(`DMT validation failed for vehicle: ${registrationNumber}`);
+        logger.warn(`No DMT validation found for vehicle: ${registrationNumber}`);
         return null;
       }
     } catch (error) {
@@ -142,17 +128,20 @@ class VehicleRepository {
 
   /**
    * Store DMT validation result
-   */
-  async storeDMTValidation(vehicleId: string, validationData: DMTValidationData): Promise<DMTValidation> {
+   */  async storeDMTValidation(vehicleId: string, validationData: DMTValidationData): Promise<DMTValidation> {
     try {
+      // Create DMT validation
       const dmtValidation = await this.prismaService.getClient().dMTValidation.create({
-        data: {
-          vehicleId,
-          ...validationData,
-        },
+        data: validationData as any,
       });
 
-      logger.info(`DMT validation stored for vehicle: ${vehicleId}`);
+      // Link the DMT validation to the vehicle
+      await this.prismaService.getClient().vehicle.update({
+        where: { id: vehicleId },
+        data: { dmtValidationId: dmtValidation.id } as any,
+      });
+
+      logger.info(`DMT validation stored and linked for vehicle: ${vehicleId}`);
       return dmtValidation;
     } catch (error) {
       logger.error(`Error storing DMT validation:`, error);
@@ -392,6 +381,42 @@ class VehicleRepository {
     } catch (error) {
       logger.error(`Error getting vehicle quota:`, error);
       throw handlePrismaError(error, 'getting vehicle quota');
+    }
+  }
+
+  /**
+   * Get all DMT validations for testing
+   */
+  async getAllDMTValidations(): Promise<any[]> {
+    try {
+      logger.info('Fetching all DMT validations from database');
+      
+      const dmtValidations = await this.prismaService.getClient().dMTValidation.findMany({
+        orderBy: { registrationNumber: 'asc' }
+      });
+      
+      logger.info(`Found ${dmtValidations.length} DMT validations`);
+      return dmtValidations;
+    } catch (error) {
+      logger.error('Error fetching DMT validations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get count of DMT validations
+   */
+  async getDMTValidationsCount(): Promise<number> {
+    try {
+      logger.info('Counting DMT validations in database');
+      
+      const count = await this.prismaService.getClient().dMTValidation.count();
+      
+      logger.info(`Total DMT validations count: ${count}`);
+      return count;
+    } catch (error) {
+      logger.error('Error counting DMT validations:', error);
+      throw error;
     }
   }
 }
