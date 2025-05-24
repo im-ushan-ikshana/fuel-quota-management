@@ -129,9 +129,9 @@ model Vehicle {
   fuelType           FuelType
   qrCode             String?           @unique
   qrCodeGeneratedAt  DateTime?
-  monthlyQuotaLimit  Float             @default(0)
-  currentQuotaUsed   Float             @default(0)
-  quotaResetDate     DateTime?
+  weeklyQuotaLiters  Float             @default(0) // Changed from monthly to weekly, in liters
+  currentWeekUsed    Float             @default(0) // Current week usage in liters
+  weekStartDate      DateTime?         // When the current week started
   isActive           Boolean           @default(true)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -181,7 +181,6 @@ model FuelStation {
   ownerId          String
   addressId        String
   fuelInventory    FuelInventory[]
-  fuelPrices       FuelPrice[]
   operators        FuelStationOperator[]
   address          Address               @relation(fields: [addressId], references: [id])
   owner            FuelStationOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -228,27 +227,21 @@ model UserRole_Assignment {
 }
 
 model FuelTransaction {
-  id                String              @id @default(cuid())
-  transactionNumber String              @unique @default(cuid())
-  fuelType          FuelType
-  quantity          Float
-  pricePerLiter     Float
-  totalAmount       Float
-  status            TransactionStatus   @default(COMPLETED)
-  qrCodeScanned     String
-  smsStatus         String?
-  smsId             String?
-  quotaBefore       Float
-  quotaAfter        Float
-  transactionDate   DateTime            @default(now())
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  vehicleId         String
-  fuelStationId     String
-  operatorId        String
-  fuelStation       FuelStation         @relation(fields: [fuelStationId], references: [id])
-  operator          FuelStationOperator @relation(fields: [operatorId], references: [id])
-  vehicle           Vehicle             @relation(fields: [vehicleId], references: [id])
+  id              String              @id @default(cuid())
+  fuelType        FuelType
+  quantityLiters  Float               // Quantity in liters (removed pricing fields)
+  quotaBefore     Float               // Quota before transaction in liters
+  quotaAfter      Float               // Quota after transaction in liters
+  qrCodeScanned   String
+  transactionDate DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  vehicleId       String
+  fuelStationId   String
+  operatorId      String
+  fuelStation     FuelStation         @relation(fields: [fuelStationId], references: [id])
+  operator        FuelStationOperator @relation(fields: [operatorId], references: [id])
+  vehicle         Vehicle             @relation(fields: [vehicleId], references: [id])
 
   @@index([fuelStationId], map: "fuel_transactions_fuelStationId_fkey")
   @@index([operatorId], map: "fuel_transactions_operatorId_fkey")
@@ -259,11 +252,11 @@ model FuelTransaction {
 model FuelInventory {
   id               String      @id @default(cuid())
   fuelType         FuelType
-  currentStock     Float
-  minimumLevel     Float
-  maximumLevel     Float
+  currentStockLiters Float     // Stock in liters
+  minimumLevelLiters Float     // Minimum level in liters
+  maximumLevelLiters Float     // Maximum level in liters
   lastRefillDate   DateTime?
-  lastRefillAmount Float?
+  lastRefillLiters Float?      // Last refill amount in liters
   lastUpdated      DateTime    @default(now())
   fuelStationId    String
   fuelStation      FuelStation @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
@@ -272,25 +265,13 @@ model FuelInventory {
   @@map("fuel_inventory")
 }
 
-model FuelPrice {
-  id            String       @id @default(cuid())
-  fuelType      FuelType
-  pricePerLiter Float
-  createdAt     DateTime     @default(now())
-  fuelStationId String?
-  fuelStation   FuelStation? @relation(fields: [fuelStationId], references: [id])
-
-  @@index([fuelStationId], map: "fuel_prices_fuelStationId_fkey")
-  @@map("fuel_prices")
-}
-
 model QuotaSettings {
-  id          String      @id @default(cuid())
-  vehicleType VehicleType
-  fuelType    FuelType
-  weeklyLimit Float
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id               String      @id @default(cuid())
+  vehicleType      VehicleType
+  fuelType         FuelType
+  weeklyLimitLiters Float      // Weekly limit in liters
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@unique([vehicleType, fuelType])
   @@map("quota_settings")
