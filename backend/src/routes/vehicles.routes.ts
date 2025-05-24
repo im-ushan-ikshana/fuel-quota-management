@@ -385,4 +385,63 @@ vehicleRouter.get('/dmt-count',
   }
 );
 
+/**
+ * GET /api/vehicles/qr/:qr
+ * Get full vehicle details by QR code
+ */
+vehicleRouter.get('/qr/:qr',
+  authenticateJWT,
+  requirePermission('vehicle', 'read'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { qr } = req.params;
+
+      if (!qr) {
+        res.status(400).json({
+          success: false,
+          message: 'QR code is required',
+        });
+        return;
+      }
+
+      const vehicle = await vehicleService.getVehicleByQRCode(qr);
+
+      if (!vehicle) {
+        res.status(404).json({
+          success: false,
+          message: 'Vehicle not found for the provided QR code',
+        });
+        return;
+      }
+
+      // Get quota information
+      const quotaInfo = await vehicleService.getVehicleQuota(vehicle.id);
+
+      res.status(200).json({
+        success: true,
+        message: 'Vehicle details retrieved successfully by QR code',
+        data: {
+          vehicle,
+          quota: quotaInfo,
+        },
+      });
+
+    } catch (error) {
+      logger.error('Error fetching vehicle details by QR code:', error);
+      
+      if (error instanceof Error) {
+        res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Internal server error while fetching vehicle details by QR code',
+        });
+      }
+    }
+  }
+);
+
 export default vehicleRouter;
