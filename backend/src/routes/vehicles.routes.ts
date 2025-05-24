@@ -18,11 +18,10 @@ vehicleRouter.post('/register',
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const vehicleData: RegisterVehicleRequest = req.body;
-      
-      // Validate required fields
+        // Validate required fields
       const requiredFields = [
         'registrationNumber', 'chassisNumber', 'engineNumber', 
-        'make', 'model', 'vehicleType', 'fuelType', 'monthlyQuotaLimit', 'ownerId'
+        'make', 'model', 'vehicleType', 'fuelType', 'weeklyQuotaLiters', 'ownerId'
       ];
       
       const missingFields = requiredFields.filter(field => !vehicleData[field as keyof RegisterVehicleRequest]);
