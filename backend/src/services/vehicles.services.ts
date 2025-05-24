@@ -16,7 +16,7 @@ export interface RegisterVehicleRequest {
   model: string;
   vehicleType: string;
   fuelType: string;
-  monthlyQuotaLimit: number;
+  weeklyQuotaLiters: number;
   ownerId: string;
 }
 
@@ -72,14 +72,13 @@ class VehicleService {
 
       // Create vehicle data for repository
       const createVehicleData: CreateVehicleData = {
-        registrationNumber: vehicleData.registrationNumber.toUpperCase(),
-        chassisNumber: vehicleData.chassisNumber,
+        registrationNumber: vehicleData.registrationNumber.toUpperCase(),        chassisNumber: vehicleData.chassisNumber,
         engineNumber: vehicleData.engineNumber,
         make: vehicleData.make,
         model: vehicleData.model,
         vehicleType: vehicleData.vehicleType as any,
         fuelType: vehicleData.fuelType as any,
-        monthlyQuotaLimit: vehicleData.monthlyQuotaLimit,
+        weeklyQuotaLiters: vehicleData.weeklyQuotaLiters,
         ownerId: vehicleData.ownerId,
       };
 
@@ -193,7 +192,7 @@ class VehicleService {
       
       // Calculate analytics
       const totalTransactions = transactions.length;
-      const totalFuelConsumed = transactions.reduce((sum, t) => sum + t.quantity, 0);
+      const totalFuelConsumed = transactions.reduce((sum, t) => sum + t.quantityLiters, 0);
       const averageFuelPerTransaction = totalTransactions > 0 ? totalFuelConsumed / totalTransactions : 0;
 
       return {
@@ -298,10 +297,8 @@ class VehicleService {
 
     if (!validFuelTypes.includes(vehicleData.fuelType)) {
       throw new Error(`Invalid fuel type: ${vehicleData.fuelType}`);
-    }
-
-    if (vehicleData.monthlyQuotaLimit <= 0) {
-      throw new Error('Monthly quota limit must be greater than 0');
+    }    if (vehicleData.weeklyQuotaLiters <= 0) {
+      throw new Error('Weekly quota limit must be greater than 0');
     }
 
     // Validate registration number format (basic validation)
