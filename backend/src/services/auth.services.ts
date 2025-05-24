@@ -5,8 +5,35 @@ import { createLogger } from '../utils/logger';
 import AuthRepository, { CreateUserData, UserWithRelations, SessionData, CreateAddressData } from '../repositories/auth.repo';
 import SmsService from './sms.services';
 import { UserType, District, Province } from '@prisma/client';
+import { create } from 'domain';
 
 const logger = createLogger('AuthService');
+
+interface oneVehicle {
+  registrationNumber: string;
+  engineNumber: string;
+  chassisNumber: string;
+  make: string;
+  model: string;
+  vehicleType: string;
+  fuelType: string;
+}
+
+interface fuelInventory {
+  fuelType: string;
+  currentStockLiters: number;
+  minimumLevelLiters: number;
+  maximumLevelLiters: number;
+}
+
+interface fuelStationInfo {
+  stationCode: string;
+  name: string;
+  phoneNumber: string;
+  licenseNumber: string;
+  address: CreateAddressData;
+  info: fuelInventory;
+}
 
 export interface RegisterUserData {
   email: string;
@@ -17,6 +44,8 @@ export interface RegisterUserData {
   nicNumber: string;
   userType: UserType;
   address: CreateAddressData;
+  vehicleInfo?: oneVehicle;
+  stationInfo?: fuelStationInfo;
 }
 
 export interface LoginData {
@@ -94,13 +123,67 @@ class AuthService {
         };
       }
 
+      if (userData.stationInfo || userData.vehicleInfo) {
+        if (userData.stationInfo && userData.vehicleInfo) {
+          return {
+            success: false,
+            message: 'Both Vehicle and Fuel Station data present'
+          }
+        }
+        // Validate required fields for station
+        const requiredFields: Record<string, boolean> = {
+          stationCode: !!userData.stationInfo?.stationCode,
+          name: !!userData.stationInfo?.name,
+          phoneNumber: !!userData.stationInfo?.phoneNumber,
+          licenseNumber: !!userData.stationInfo?.licenseNumber,
+          address: !!userData.stationInfo?.address,
+          fuelType: !!userData.stationInfo?.info?.fuelType,
+          currentStockLiters: !!userData.stationInfo?.info?.currentStockLiters,
+          minimumLevelLiters: !!userData.stationInfo?.info?.minimumLevelLiters,
+          maximumLevelLiters: !!userData.stationInfo?.info?.maximumLevelLiters
+        };
+        // Check if all required fields are present
+        if (userData.stationInfo) {
+          const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value);
+          if (missingFields.length > 0) {
+            return {
+              success: false,
+              message: `Missing required fields for fuel station: ${missingFields.map(([key]) => key).join(', ')}`
+            };
+          }
+        }
+
+        // Validate required fields for vehicle
+        const vehicleRequiredFields: Record<string, boolean> = {
+          registrationNumber: !!userData.vehicleInfo?.registrationNumber,
+          engineNumber: !!userData.vehicleInfo?.engineNumber,
+          chassisNumber: !!userData.vehicleInfo?.chassisNumber,
+          make: !!userData.vehicleInfo?.make,
+          model: !!userData.vehicleInfo?.model,
+          vehicleType: !!userData.vehicleInfo?.vehicleType,
+          fuelType: !!userData.vehicleInfo?.fuelType
+        };
+
+        // Check if all required fields are present
+        if (userData.vehicleInfo) {
+          const missingVehicleFields = Object.entries(vehicleRequiredFields).filter(([key, value]) => !value);
+          if (missingVehicleFields.length > 0) {
+            return {
+              success: false,
+              message: `Missing required fields for vehicle: ${missingVehicleFields.map(([key]) => key).join(', ')}`
+            };
+          }
+        }
+      }      //user init
+      let user;
+
       // Create address first
       const address = await this.authRepository.createAddress(userData.address);
 
       // Hash password
       const hashedPassword = await bcrypt.hash(userData.password, 12);
 
-      // Create user
+      // Create base user data
       const createUserData: CreateUserData = {
         email: userData.email,
         password: hashedPassword,
@@ -112,7 +195,60 @@ class AuthService {
         addressId: address.id
       };
 
-      const user = await this.authRepository.createUser(createUserData);
+      // Handle specific user types
+      if (userData.userType === UserType.FUEL_STATION_OWNER && userData.stationInfo) {
+        // Check if station exists
+        const existingStation = await this.authRepository.checkFuelStationExists(userData.stationInfo.stationCode, userData.stationInfo.licenseNumber);
+
+        if (existingStation.licenseNumberExists) {
+          return {
+            success: false,
+            message: 'This license number already exists'
+          };
+        }
+        if (existingStation.stationCodeExists) {
+          return {
+            success: false,
+            message: 'This station code already exists'
+          };
+        }        // Create fuel station owner with separate business data
+        const businessData = {
+          businessRegNo: userData.stationInfo.licenseNumber,
+          businessName: userData.stationInfo.name
+        };
+        
+        const fuelStationOwnerResult = await this.authRepository.createFuelStationOwner({
+          ...createUserData,
+          stationInfo: userData.stationInfo
+        }, businessData);
+        user = fuelStationOwnerResult.user;
+      } 
+      else if (userData.userType === UserType.VEHICLE_OWNER && userData.vehicleInfo) {
+        // Check if vehicle exists
+        const existingVehicle = await this.authRepository.checkVehicleExists(userData.vehicleInfo.registrationNumber, userData.vehicleInfo.chassisNumber);
+
+        if (existingVehicle.chassisExists) {
+          return {
+            success: false,
+            message: 'Chassis Number is Invalid/or Already Exists'
+          };
+        }
+        if (existingVehicle.registrationExists) {
+          return {
+            success: false,
+            message: 'This registration number already exists'
+          };
+        }        // Create vehicle owner, passing vehicleInfo separately through the existing repository method
+        const vehicleOwnerResult = await this.authRepository.createVehicleOwner({
+          ...createUserData,
+          vehicleInfo: userData.vehicleInfo
+        });
+        user = vehicleOwnerResult.user;
+      }
+      else {
+        // Create regular user (fallback)
+        user = await this.authRepository.createUser(createUserData);
+      }
 
       // Generate verification codes
       await this.sendEmailVerification(user.id, user.email);
@@ -238,7 +374,7 @@ class AuthService {
   async verifyToken(token: string): Promise<{ valid: boolean; user?: UserWithRelations; sessionId?: string }> {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
-      
+
       const session = await this.authRepository.findSessionById(decoded.sessionId);
       if (!session) {
         return { valid: false };
