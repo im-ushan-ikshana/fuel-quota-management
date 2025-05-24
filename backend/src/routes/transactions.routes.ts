@@ -3,7 +3,7 @@ import { authenticateJWT } from '../utils/jwt.middleware';
 import { requirePermission } from '../utils/permissions';
 import TransactionService, { FuelPumpingRequest } from '../services/transactions.services';
 import { createLogger } from '../utils/logger';
-import { FuelType, TransactionStatus } from '@prisma/client';
+import { FuelType } from '@prisma/client';
 
 const transactionRouter = Router();
 const transactionService = new TransactionService();
@@ -72,7 +72,7 @@ transactionRouter.get('/analytics', requirePermission('admin', 'reports'), async
 // GET /api/v1/transactions/search - Search transactions (must come before /:id)
 transactionRouter.get('/search', requirePermission('transaction', 'read'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { query, dateRange, fuelType, status, page = '1', limit = '50' } = req.query;
+    const { query, dateRange, fuelType, page = '1', limit = '50' } = req.query;
     
     // Build search filters
     const filters: any = {};
@@ -85,7 +85,6 @@ transactionRouter.get('/search', requirePermission('transaction', 'read'), async
       }
     }
     if (fuelType) filters.fuelType = fuelType as FuelType;
-    if (status) filters.status = status as TransactionStatus;
 
     // For simple implementation, use regular getTransactions with filters
     // TODO: Implement actual search functionality in service layer
@@ -101,7 +100,7 @@ transactionRouter.get('/search', requirePermission('transaction', 'read'), async
       data: {
         ...result,
         searchQuery: query,
-        filters: { dateRange, fuelType, status }
+        filters: { dateRange, fuelType }
       }
     });
   } catch (error) {
@@ -117,7 +116,7 @@ transactionRouter.get('/search', requirePermission('transaction', 'read'), async
 // GET /api/v1/transactions - Get all transactions
 transactionRouter.get('/', requirePermission('transaction', 'read'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = '1', limit = '50', startDate, endDate, vehicleId, fuelStationId, status } = req.query;
+    const { page = '1', limit = '50', startDate, endDate, vehicleId, fuelStationId } = req.query;
     
     // Build filters
     const filters: any = {};
@@ -125,7 +124,6 @@ transactionRouter.get('/', requirePermission('transaction', 'read'), async (req:
     if (endDate) filters.endDate = new Date(endDate as string);
     if (vehicleId) filters.vehicleId = vehicleId as string;
     if (fuelStationId) filters.fuelStationId = fuelStationId as string;
-    if (status) filters.status = status as TransactionStatus;
 
     const result = await transactionService.getTransactions(
       filters,
@@ -151,13 +149,13 @@ transactionRouter.get('/', requirePermission('transaction', 'read'), async (req:
 // POST /api/v1/transactions - Create transaction (fuel pumping)
 transactionRouter.post('/', requirePermission('transaction', 'create'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { qrCode, vehicleId, fuelStationId, operatorId, fuelType, quantity, pricePerLiter } = req.body;
+    const { qrCode, vehicleId, fuelStationId, operatorId, fuelType, quantityLiters } = req.body;
 
     // Validate required fields
-    if (!qrCode || !vehicleId || !fuelStationId || !operatorId || !fuelType || !quantity || !pricePerLiter) {
+    if (!qrCode || !vehicleId || !fuelStationId || !operatorId || !fuelType || !quantityLiters) {
       res.status(400).json({
         success: false,
-        message: 'Missing required fields: qrCode, vehicleId, fuelStationId, operatorId, fuelType, quantity, pricePerLiter'
+        message: 'Missing required fields: qrCode, vehicleId, fuelStationId, operatorId, fuelType, quantityLiters'
       });
       return;
     }
@@ -168,8 +166,7 @@ transactionRouter.post('/', requirePermission('transaction', 'create'), async (r
       fuelStationId,
       operatorId,
       fuelType: fuelType as FuelType,
-      quantity: parseFloat(quantity),
-      pricePerLiter: parseFloat(pricePerLiter)
+      quantityLiters: parseFloat(quantityLiters)
     };
 
     const transaction = await transactionService.processFuelPumping(pumpingRequest);
@@ -234,62 +231,6 @@ transactionRouter.get('/:id', requirePermission('transaction', 'read'), async (r
   }
 });
 
-// PUT /api/v1/transactions/:id - Update transaction status
-transactionRouter.put('/:id', requirePermission('transaction', 'update'), async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!id) {
-      res.status(400).json({
-        success: false,
-        message: 'Transaction ID is required'
-      });
-      return;
-    }
-
-    if (!status) {
-      res.status(400).json({
-        success: false,
-        message: 'Status is required'
-      });
-      return;
-    }
-
-    // Validate status is a valid TransactionStatus
-    const validStatuses = ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'];
-    if (!validStatuses.includes(status)) {
-      res.status(400).json({
-        success: false,
-        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
-      });
-      return;
-    }
-
-    const updatedTransaction = await transactionService.updateTransactionStatus(id, status as TransactionStatus);
-
-    res.status(200).json({
-      success: true,
-      message: 'Transaction status updated successfully',
-      data: updatedTransaction
-    });
-  } catch (error) {
-    logger.error('Error updating transaction status:', error);
-    
-    if (error instanceof Error) {
-      res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Failed to update transaction'
-      });
-    }
-  }
-});
-
 // DELETE /api/v1/transactions/:id - Cancel transaction
 transactionRouter.delete('/:id', requirePermission('transaction', 'delete'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -348,11 +289,10 @@ transactionRouter.get('/quota/:qrCode', requirePermission('transaction', 'read')
       message: 'Vehicle quota retrieved successfully',
       data: {
         registrationNo: quotaInfo.vehicle.registrationNumber,
-        vehicleType: quotaInfo.vehicle.vehicleType,
-        allocatedLitres: quotaInfo.quota.allocatedQuota,
+        vehicleType: quotaInfo.vehicle.vehicleType,        allocatedLitres: quotaInfo.quota.allocatedQuota,
         usedLitres: quotaInfo.quota.usedQuota,
         remainingLitres: quotaInfo.quota.remainingQuota,
-        quotaPeriod: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        quotaPeriod: 'Current Week',
         ownerName: quotaInfo.vehicle.ownerName,
       }
     });
@@ -376,7 +316,7 @@ transactionRouter.get('/quota/:qrCode', requirePermission('transaction', 'read')
 // POST /api/v1/transactions/pump - Pump fuel (mobile app format)
 transactionRouter.post('/pump', requirePermission('transaction', 'create'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { qrCode, vehicleId, pumpedLitres, stationId, operatorId, fuelType, pricePerLiter } = req.body;
+    const { qrCode, vehicleId, pumpedLitres, stationId, operatorId, fuelType } = req.body;
 
     // Validate required fields for mobile format
     if (!qrCode || !vehicleId || !pumpedLitres || !stationId) {
@@ -390,7 +330,6 @@ transactionRouter.post('/pump', requirePermission('transaction', 'create'), asyn
     // Use current user as operator if not provided, or use a default
     const finalOperatorId = operatorId || (req as any).user?.id || 'system';
     const finalFuelType = fuelType || 'PETROL_92_OCTANE'; // Default fuel type
-    const finalPricePerLiter = pricePerLiter || 150.00; // Default price
 
     const pumpingRequest: FuelPumpingRequest = {
       qrCode,
@@ -398,8 +337,7 @@ transactionRouter.post('/pump', requirePermission('transaction', 'create'), asyn
       fuelStationId: stationId,
       operatorId: finalOperatorId,
       fuelType: finalFuelType as FuelType,
-      quantity: parseFloat(pumpedLitres),
-      pricePerLiter: parseFloat(finalPricePerLiter.toString())
+      quantityLiters: parseFloat(pumpedLitres)
     };
 
     const transaction = await transactionService.processFuelPumping(pumpingRequest);
@@ -409,9 +347,8 @@ transactionRouter.post('/pump', requirePermission('transaction', 'create'), asyn
       message: 'Fuel pumped successfully',
       data: {
         transactionId: transaction.id,
-        pumpedLitres: transaction.quantity,
-        remainingQuota: transaction.quotaAfter,
-        totalAmount: transaction.totalAmount
+        pumpedLitres: transaction.quantityLiters,
+        remainingQuota: transaction.quotaAfter
       }
     });
   } catch (error) {
