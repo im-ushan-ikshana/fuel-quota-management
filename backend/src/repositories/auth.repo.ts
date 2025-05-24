@@ -5,6 +5,32 @@ import { UserType, District, Province } from '@prisma/client';
 
 const logger = createLogger('AuthRepository');
 
+interface fuelInventory {
+  fuelType: string;
+  currentStockLiters: number;
+  minimumLevelLiters: number;
+  maximumLevelLiters: number;
+}
+
+interface fuelStationInfo {
+  stationCode: string;
+  name: string;
+  phoneNumber: string;
+  licenseNumber: string;
+  address: CreateAddressData;
+  info: fuelInventory;
+}
+
+interface oneVehicle {
+  registrationNumber: string;
+  engineNumber: string;
+  chassisNumber: string;
+  make: string;
+  model: string;
+  vehicleType: string;
+  fuelType: string;
+}
+
 export interface CreateUserData {
   email: string;
   password: string;
@@ -14,6 +40,8 @@ export interface CreateUserData {
   nicNumber: string;
   userType: UserType;
   addressId: string;
+  vehicleInfo?: oneVehicle;
+  stationInfo?: fuelStationInfo;
 }
 
 export interface UserWithRelations {
@@ -82,7 +110,7 @@ class AuthRepository {
   async findUserByEmail(email: string): Promise<UserWithRelations | null> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.user.findUnique({
         where: { email },
         include: {
@@ -107,7 +135,7 @@ class AuthRepository {
   async findUserById(userId: string): Promise<UserWithRelations | null> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.user.findUnique({
         where: { id: userId },
         include: {
@@ -132,7 +160,7 @@ class AuthRepository {
   async findUserByPhoneNumber(phoneNumber: string): Promise<UserWithRelations | null> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.user.findUnique({
         where: { phoneNumber },
         include: {
@@ -157,7 +185,7 @@ class AuthRepository {
   async findUserByNic(nicNumber: string): Promise<UserWithRelations | null> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.user.findUnique({
         where: { nicNumber },
         include: {
@@ -182,7 +210,7 @@ class AuthRepository {
   async createUser(userData: CreateUserData): Promise<UserWithRelations> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.user.create({
         data: userData,
         include: {
@@ -199,6 +227,207 @@ class AuthRepository {
       logger.error('Error creating user:', error);
       throw handlePrismaError(error, 'creating user');
     }
+  }  /**
+   * Create a Vehicle Owner
+   * @param userData - User data including vehicle information
+   * @returns The newly created vehicle owner with user details
+   */
+  async createVehicleOwner(userData: CreateUserData): Promise<{
+    id: string;
+    userId: string;
+    registrationDate: Date;
+    user: UserWithRelations;
+  }> {
+    try {
+      const prisma = this.prismaService.getClient();
+        // First create a user with type VEHICLE_OWNER
+      // Remove vehicleInfo from userData before creating User since it's not part of the User model
+      const { vehicleInfo, ...userDataWithoutVehicle } = userData;
+      
+      const userWithVehicleOwnerType = {
+        ...userDataWithoutVehicle,
+        userType: UserType.VEHICLE_OWNER
+      };
+      
+      // Use a transaction to ensure all related records are created properly
+      const result = await prisma.$transaction(async (tx) => {
+        // Create the user
+        const user = await tx.user.create({
+          data: userWithVehicleOwnerType,
+          include: {
+            address: true,
+            userRoles: {
+              where: { isActive: true },
+              include: {
+                role: true
+              }
+            }
+          }
+        });
+        
+        // Create the vehicle owner record linked to the user
+        const vehicleOwner = await tx.vehicleOwner.create({
+          data: {
+            userId: user.id
+          },
+          include: {
+            user: {
+              include: {
+                address: true,
+                userRoles: {
+                  where: { isActive: true },
+                  include: {
+                    role: true
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        // If vehicle information is provided, create the vehicle
+        if (userData.vehicleInfo) {
+          const vehicleData = {
+            registrationNumber: userData.vehicleInfo.registrationNumber,
+            chassisNumber: userData.vehicleInfo.chassisNumber,
+            engineNumber: userData.vehicleInfo.engineNumber,
+            make: userData.vehicleInfo.make,
+            model: userData.vehicleInfo.model,
+            vehicleType: userData.vehicleInfo.vehicleType as any, // Conversion to VehicleType enum
+            fuelType: userData.vehicleInfo.fuelType as any, // Conversion to FuelType enum
+            ownerId: vehicleOwner.id,
+            isActive: true
+          };
+          
+          await tx.vehicle.create({
+            data: vehicleData
+          });
+        }
+        
+        return vehicleOwner;
+      });
+      
+      return result;
+    } catch (error) {
+      logger.error('Error creating vehicle owner:', error);
+      throw handlePrismaError(error, 'creating vehicle owner');
+    }
+  }  /**
+   * Create a Fuel Station Owner
+   * @param userData - User data including station owner information
+   * @param businessData - Business registration information
+   * @returns The newly created fuel station owner with user details
+   */
+  async createFuelStationOwner(
+    userData: CreateUserData, 
+    businessData: { 
+      businessRegNo: string; 
+      businessName: string;
+    }
+  ): Promise<{
+    id: string;
+    userId: string;
+    businessRegNo: string;
+    businessName: string;
+    user: UserWithRelations;
+  }> {
+    try {
+      const prisma = this.prismaService.getClient();
+        // First create a user with type FUEL_STATION_OWNER
+      // Remove stationInfo from userData before creating User since it's not part of the User model
+      const { stationInfo, ...userDataWithoutStation } = userData;
+      
+      const userWithStationOwnerType = {
+        ...userDataWithoutStation,
+        userType: UserType.FUEL_STATION_OWNER
+      };
+      
+      // Use a transaction to ensure all related records are created properly
+      const result = await prisma.$transaction(async (tx) => {
+        // Create the user
+        const user = await tx.user.create({
+          data: userWithStationOwnerType,
+          include: {
+            address: true,
+            userRoles: {
+              where: { isActive: true },
+              include: {
+                role: true
+              }
+            }
+          }
+        });
+        
+        // Create the fuel station owner record linked to the user
+        const fuelStationOwner = await tx.fuelStationOwner.create({
+          data: {
+            userId: user.id,
+            businessRegNo: businessData.businessRegNo,
+            businessName: businessData.businessName
+          },
+          include: {
+            user: {
+              include: {
+                address: true,
+                userRoles: {
+                  where: { isActive: true },
+                  include: {
+                    role: true
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        // If station information is provided, create the fuel station
+        if (userData.stationInfo) {
+          // Create a new address for the fuel station
+          const stationAddressData = {
+            ...userData.stationInfo.address,
+          };
+          
+          const stationAddress = await tx.address.create({
+            data: stationAddressData
+          });
+          
+          // Create the fuel station
+          const fuelStationData = {
+            stationCode: userData.stationInfo.stationCode,
+            name: userData.stationInfo.name,
+            phoneNumber: userData.stationInfo.phoneNumber,
+            licenseNumber: userData.stationInfo.licenseNumber,
+            ownerId: fuelStationOwner.id,
+            addressId: stationAddress.id,
+            isActive: true
+          };
+          
+          const fuelStation = await tx.fuelStation.create({
+            data: fuelStationData
+          });
+          
+          // Create fuel inventory record
+          if (userData.stationInfo.info) {
+            await tx.fuelInventory.create({
+              data: {
+                fuelType: userData.stationInfo.info.fuelType as any,
+                currentStockLiters: userData.stationInfo.info.currentStockLiters,
+                minimumLevelLiters: userData.stationInfo.info.minimumLevelLiters,
+                maximumLevelLiters: userData.stationInfo.info.maximumLevelLiters,
+                fuelStationId: fuelStation.id
+              }
+            });
+          }
+        }
+        
+        return fuelStationOwner;
+      });
+      
+      return result;
+    } catch (error) {
+      logger.error('Error creating fuel station owner:', error);
+      throw handlePrismaError(error, 'creating fuel station owner');
+    }
   }
 
   /**
@@ -207,10 +436,10 @@ class AuthRepository {
   async updateUserPassword(userId: string, hashedPassword: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           password: hashedPassword,
           updatedAt: new Date()
         }
@@ -227,10 +456,10 @@ class AuthRepository {
   async updateLastLogin(userId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           lastLoginAt: new Date(),
           updatedAt: new Date()
         }
@@ -247,10 +476,10 @@ class AuthRepository {
   async updateEmailVerification(userId: string, verified: boolean): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           emailVerified: verified,
           updatedAt: new Date()
         }
@@ -267,10 +496,10 @@ class AuthRepository {
   async updatePhoneVerification(userId: string, verified: boolean): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           phoneVerified: verified,
           updatedAt: new Date()
         }
@@ -287,7 +516,7 @@ class AuthRepository {
   async createSession(sessionData: SessionData): Promise<{ sessionId: string }> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       const session = await prisma.session.create({
         data: {
           userId: sessionData.userId,
@@ -297,7 +526,7 @@ class AuthRepository {
           isActive: true
         }
       });
-      
+
       return { sessionId: session.sessionId };
     } catch (error) {
       logger.error('Error creating session:', error);
@@ -311,9 +540,9 @@ class AuthRepository {
   async findSessionById(sessionId: string) {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.session.findUnique({
-        where: { 
+        where: {
           sessionId,
           isActive: true,
           expiresAt: {
@@ -346,10 +575,10 @@ class AuthRepository {
   async updateSessionLastAccessed(sessionId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.session.update({
         where: { sessionId },
-        data: { 
+        data: {
           lastAccessedAt: new Date(),
           updatedAt: new Date()
         }
@@ -366,10 +595,10 @@ class AuthRepository {
   async invalidateSession(sessionId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.session.update({
         where: { sessionId },
-        data: { 
+        data: {
           isActive: false,
           updatedAt: new Date()
         }
@@ -386,7 +615,7 @@ class AuthRepository {
   async deleteExpiredSessions(): Promise<number> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       const result = await prisma.session.deleteMany({
         where: {
           OR: [
@@ -395,7 +624,7 @@ class AuthRepository {
           ]
         }
       });
-      
+
       return result.count;
     } catch (error) {
       logger.error('Error deleting expired sessions:', error);
@@ -409,11 +638,11 @@ class AuthRepository {
   async createAddress(addressData: CreateAddressData): Promise<{ id: string }> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       const address = await prisma.address.create({
         data: addressData
       });
-      
+
       return { id: address.id };
     } catch (error) {
       logger.error('Error creating address:', error);
@@ -431,13 +660,13 @@ class AuthRepository {
   }> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       const [emailUser, phoneUser, nicUser] = await Promise.all([
         prisma.user.findUnique({ where: { email }, select: { id: true } }),
         prisma.user.findUnique({ where: { phoneNumber }, select: { id: true } }),
         prisma.user.findUnique({ where: { nicNumber }, select: { id: true } })
       ]);
-      
+
       return {
         emailExists: !!emailUser,
         phoneExists: !!phoneUser,
@@ -448,6 +677,60 @@ class AuthRepository {
       throw handlePrismaError(error, 'checking user existence');
     }
   }
+  /**
+   * check a fuel station already exists
+   * @param stationCode - The unique code for the station
+   * @param licenseNumber - The license number of the station
+   * @returns An object indicating whether a station with the given code or license exists
+   */
+  async checkFuelStationExists(stationCode: string, licenseNumber: string): Promise<{
+    stationCodeExists: boolean;
+    licenseNumberExists: boolean;
+  }> {
+    try {
+      const prisma = this.prismaService.getClient();
+
+      const [stationByCode, stationByLicense] = await Promise.all([
+        prisma.fuelStation.findUnique({ where: { stationCode }, select: { id: true } }),
+        prisma.fuelStation.findUnique({ where: { licenseNumber }, select: { id: true } })
+      ]);
+
+      return {
+        stationCodeExists: !!stationByCode,
+        licenseNumberExists: !!stationByLicense
+      };
+    } catch (error) {
+      logger.error('Error checking fuel station existence:', error);
+      throw handlePrismaError(error, 'checking fuel station existence');
+    }
+  }
+  /**
+   * Check if a vehicle already exists by registration number or chassis number
+   * @param registrationNumber - The registration number of the vehicle
+   * @param chassisNumber - The chassis number of the vehicle
+   * @returns An object indicating whether a vehicle with the given registration or chassis number exists
+   */
+  async checkVehicleExists(registrationNumber: string, chassisNumber: string): Promise<{
+    registrationExists: boolean;
+    chassisExists: boolean;
+  }> {
+    try {
+      const prisma = this.prismaService.getClient();
+
+      const [vehicleByRegistration, vehicleByChassis] = await Promise.all([
+        prisma.vehicle.findUnique({ where: { registrationNumber }, select: { id: true } }),
+        prisma.vehicle.findUnique({ where: { chassisNumber }, select: { id: true } })
+      ]);
+
+      return {
+        registrationExists: !!vehicleByRegistration,
+        chassisExists: !!vehicleByChassis
+      };
+    } catch (error) {
+      logger.error('Error checking vehicle existence:', error);
+      throw handlePrismaError(error, 'checking vehicle existence');
+    }
+  }
 
   /**
    * Assign role to user
@@ -455,7 +738,7 @@ class AuthRepository {
   async assignUserRole(userId: string, roleId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.userRole_Assignment.create({
         data: {
           userId,
@@ -475,7 +758,7 @@ class AuthRepository {
   async removeUserRole(userId: string, roleId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.userRole_Assignment.updateMany({
         where: { userId, roleId },
         data: { isActive: false }
@@ -492,9 +775,9 @@ class AuthRepository {
   async getUserRoles(userId: string) {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       return await prisma.userRole_Assignment.findMany({
-        where: { 
+        where: {
           userId,
           isActive: true
         },
@@ -522,10 +805,10 @@ class AuthRepository {
   async deactivateUser(userId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           isActive: false,
           updatedAt: new Date()
         }
@@ -542,10 +825,10 @@ class AuthRepository {
   async activateUser(userId: string): Promise<void> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           isActive: true,
           updatedAt: new Date()
         }
