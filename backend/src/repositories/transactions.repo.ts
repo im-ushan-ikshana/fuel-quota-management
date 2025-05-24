@@ -11,9 +11,7 @@ export interface CreateTransactionData {
   operatorId: string;
   qrCodeScanned: string;
   fuelType: FuelType;
-  quantity: number;
-  pricePerLiter: number;
-  totalAmount: number;
+  quantityLiters: number;
   quotaBefore: number;
   quotaAfter: number;
 }
@@ -24,7 +22,6 @@ export interface TransactionFilters {
   vehicleId?: string;
   fuelStationId?: string;
   operatorId?: string;
-  status?: TransactionStatus;
 }
 
 export interface TransactionWithDetails extends FuelTransaction {
@@ -59,7 +56,6 @@ class TransactionRepository {
   constructor() {
     this.prismaService = PrismaService.getInstance();
   }
-
   /**
    * Create a new fuel transaction
    */
@@ -70,7 +66,6 @@ class TransactionRepository {
         const transaction = await prisma.fuelTransaction.create({
           data: {
             ...transactionData,
-            status: TransactionStatus.COMPLETED,
             transactionDate: new Date(),
           },
         });
@@ -158,12 +153,9 @@ class TransactionRepository {
         where.transactionDate = {};
         if (filters.startDate) where.transactionDate.gte = filters.startDate;
         if (filters.endDate) where.transactionDate.lte = filters.endDate;
-      }
-
-      if (filters.vehicleId) where.vehicleId = filters.vehicleId;
+      }      if (filters.vehicleId) where.vehicleId = filters.vehicleId;
       if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId;
       if (filters.operatorId) where.operatorId = filters.operatorId;
-      if (filters.status) where.status = filters.status;
 
       // Get total count
       const total = await this.prismaService.getClient().fuelTransaction.count({ where });
@@ -262,61 +254,38 @@ class TransactionRepository {
       }
 
       if (filters.vehicleId) where.vehicleId = filters.vehicleId;
-      if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId;
-
-      const stats = await this.prismaService.getClient().fuelTransaction.aggregate({
+      if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId;      const stats = await this.prismaService.getClient().fuelTransaction.aggregate({
         where,
         _count: { id: true },
         _sum: {
-          quantity: true,
-          totalAmount: true,
+          quantityLiters: true,
         },
         _avg: {
-          totalAmount: true,
+          quantityLiters: true,
         },
       });
 
       return {
-        totalTransactions: stats._count.id || 0,
-        totalFuelDispensed: stats._sum.quantity || 0,
-        totalRevenue: stats._sum.totalAmount || 0,
-        averageTransactionValue: stats._avg.totalAmount || 0,
+        totalTransactions: stats._count?.id || 0,
+        totalFuelDispensed: stats._sum?.quantityLiters || 0,
+        totalRevenue: 0, // Revenue data no longer available
+        averageTransactionValue: 0, // Transaction value no longer available
       };
     } catch (error) {
       logger.error(`Error getting transaction stats:`, error);
       throw handlePrismaError(error, 'getting transaction stats');
     }
   }
-
   /**
-   * Update transaction status
-   */
-  async updateTransactionStatus(transactionId: string, status: TransactionStatus): Promise<FuelTransaction> {
-    try {
-      const transaction = await this.prismaService.getClient().fuelTransaction.update({
-        where: { id: transactionId },
-        data: { status },
-      });
-
-      logger.info(`Transaction status updated: ${transactionId} -> ${status}`);
-      return transaction;
-    } catch (error) {
-      logger.error(`Error updating transaction status:`, error);
-      throw handlePrismaError(error, 'updating transaction status');
-    }
-  }
-
-  /**
-   * Delete transaction (soft delete by updating status)
+   * Delete transaction (hard delete)
    */
   async deleteTransaction(transactionId: string): Promise<FuelTransaction> {
     try {
-      const transaction = await this.prismaService.getClient().fuelTransaction.update({
+      const transaction = await this.prismaService.getClient().fuelTransaction.delete({
         where: { id: transactionId },
-        data: { status: TransactionStatus.CANCELLED },
       });
 
-      logger.info(`Transaction marked as cancelled: ${transactionId}`);
+      logger.info(`Transaction deleted: ${transactionId}`);
       return transaction;
     } catch (error) {
       logger.error(`Error deleting transaction:`, error);
