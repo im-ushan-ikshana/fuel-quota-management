@@ -136,25 +136,25 @@ model Vehicle {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   ownerId            String
-  dmtValidations     DMTValidation[]
+  dmtValidationId    String?           @unique
+  dmtValidation      DMTValidation?    @relation("VehicleDMTValidation", fields: [dmtValidationId], references: [id])
   fuelTransactions   FuelTransaction[]
   owner              VehicleOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId], map: "vehicles_ownerId_fkey")
+  @@index([dmtValidationId], map: "vehicles_dmtValidationId_fkey")
   @@map("vehicles")
 }
 
 model DMTValidation {
-  id                 String  @id @default(cuid())
-  vehicleId          String
+  id                 String   @id @default(cuid())
   registrationNumber String
   chassisNumber      String
   engineNumber       String
   ownerNic           String
   ownerName          String
-  vehicle            Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle            Vehicle? @relation("VehicleDMTValidation")
 
-  @@index([vehicleId], map: "dmt_validations_vehicleId_fkey")
   @@map("dmt_validations")
 }
 
