@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import PrismaService from '@/services/prisma.services';
+import PrismaService from '../services/prisma.services';
 import { logger } from './logger';
 import { AuthenticatedRequest } from './permissions';
 

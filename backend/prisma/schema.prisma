@@ -1,4 +1,3 @@
-//prisma schema file for database modeling - db design for Track It Lk
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,14 +7,316 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-//enum for vehicle types
+model Role {
+  id          String                @id @default(cuid())
+  name        String                @unique
+  description String?
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  permissions RolePermission[]
+  userRoles   UserRole_Assignment[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  module          String
+  action          String
+  description     String?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  rolePermissions RolePermission[]
+
+  @@unique([module, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId], map: "role_permissions_permissionId_fkey")
+  @@map("role_permissions")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  sessionId      String   @unique @default(uuid())
+  userId         String
+  ipAddress      String?
+  userAgent      String?
+  isActive       Boolean  @default(true)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastAccessedAt DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Address {
+  id           String        @id @default(cuid())
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  district     District
+  province     Province
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  fuelStations FuelStation[]
+  users        User[]
+
+  @@map("addresses")
+}
+
+model User {
+  id                  String                @id @default(cuid())
+  email               String                @unique
+  password            String
+  firstName           String
+  lastName            String
+  phoneNumber         String                @unique
+  nicNumber           String                @unique
+  userType            UserType
+  isActive            Boolean               @default(true)
+  emailVerified       Boolean               @default(false)
+  phoneVerified       Boolean               @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  addressId           String
+  adminUser           AdminUser?
+  fuelStationOperator FuelStationOperator?
+  fuelStationOwner    FuelStationOwner?
+  sessions            Session[]
+  userRoles           UserRole_Assignment[]
+  address             Address               @relation(fields: [addressId], references: [id])
+  vehicleOwner        VehicleOwner?
+
+  @@index([addressId], map: "users_addressId_fkey")
+  @@map("users")
+}
+
+model VehicleOwner {
+  id               String    @id @default(cuid())
+  registrationDate DateTime  @default(now())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles         Vehicle[]
+
+  @@map("vehicle_owners")
+}
+
+model Vehicle {
+  id                 String            @id @default(cuid())
+  registrationNumber String            @unique
+  chassisNumber      String            @unique
+  engineNumber       String
+  make               String
+  model              String
+  vehicleType        VehicleType
+  fuelType           FuelType
+  qrCode             String?           @unique
+  qrCodeGeneratedAt  DateTime?
+  monthlyQuotaLimit  Float             @default(0)
+  currentQuotaUsed   Float             @default(0)
+  quotaResetDate     DateTime?
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  ownerId            String
+  dmtValidations     DMTValidation[]
+  fuelTransactions   FuelTransaction[]
+  owner              VehicleOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId], map: "vehicles_ownerId_fkey")
+  @@map("vehicles")
+}
+
+model DMTValidation {
+  id                 String  @id @default(cuid())
+  vehicleId          String
+  registrationNumber String
+  chassisNumber      String
+  engineNumber       String
+  ownerNic           String
+  ownerName          String
+  vehicle            Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId], map: "dmt_validations_vehicleId_fkey")
+  @@map("dmt_validations")
+}
+
+model FuelStationOwner {
+  id            String        @id @default(cuid())
+  businessRegNo String        @unique
+  businessName  String
+  userId        String        @unique
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fuelStations  FuelStation[]
+
+  @@map("fuel_station_owners")
+}
+
+model FuelStation {
+  id               String                @id @default(cuid())
+  stationCode      String                @unique
+  name             String
+  phoneNumber      String
+  licenseNumber    String                @unique
+  isActive         Boolean               @default(true)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  ownerId          String
+  addressId        String
+  fuelInventory    FuelInventory[]
+  fuelPrices       FuelPrice[]
+  operators        FuelStationOperator[]
+  address          Address               @relation(fields: [addressId], references: [id])
+  owner            FuelStationOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fuelTransactions FuelTransaction[]
+
+  @@index([addressId], map: "fuel_stations_addressId_fkey")
+  @@index([ownerId], map: "fuel_stations_ownerId_fkey")
+  @@map("fuel_stations")
+}
+
+model FuelStationOperator {
+  id               String            @id @default(cuid())
+  employeeId       String            @unique
+  fuelStationId    String
+  userId           String            @unique
+  fuelStation      FuelStation       @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fuelTransactions FuelTransaction[]
+
+  @@index([fuelStationId], map: "fuel_station_operators_fuelStationId_fkey")
+  @@map("fuel_station_operators")
+}
+
+model AdminUser {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_users")
+}
+
+model UserRole_Assignment {
+  id         String   @id @default(cuid())
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+  role       Role     @relation(fields: [roleId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId], map: "user_role_assignments_roleId_fkey")
+  @@map("user_role_assignments")
+}
+
+model FuelTransaction {
+  id                String              @id @default(cuid())
+  transactionNumber String              @unique @default(cuid())
+  fuelType          FuelType
+  quantity          Float
+  pricePerLiter     Float
+  totalAmount       Float
+  status            TransactionStatus   @default(COMPLETED)
+  qrCodeScanned     String
+  smsStatus         String?
+  smsId             String?
+  quotaBefore       Float
+  quotaAfter        Float
+  transactionDate   DateTime            @default(now())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  vehicleId         String
+  fuelStationId     String
+  operatorId        String
+  fuelStation       FuelStation         @relation(fields: [fuelStationId], references: [id])
+  operator          FuelStationOperator @relation(fields: [operatorId], references: [id])
+  vehicle           Vehicle             @relation(fields: [vehicleId], references: [id])
+
+  @@index([fuelStationId], map: "fuel_transactions_fuelStationId_fkey")
+  @@index([operatorId], map: "fuel_transactions_operatorId_fkey")
+  @@index([vehicleId], map: "fuel_transactions_vehicleId_fkey")
+  @@map("fuel_transactions")
+}
+
+model FuelInventory {
+  id               String      @id @default(cuid())
+  fuelType         FuelType
+  currentStock     Float
+  minimumLevel     Float
+  maximumLevel     Float
+  lastRefillDate   DateTime?
+  lastRefillAmount Float?
+  lastUpdated      DateTime    @default(now())
+  fuelStationId    String
+  fuelStation      FuelStation @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
+
+  @@unique([fuelStationId, fuelType])
+  @@map("fuel_inventory")
+}
+
+model FuelPrice {
+  id            String       @id @default(cuid())
+  fuelType      FuelType
+  pricePerLiter Float
+  createdAt     DateTime     @default(now())
+  fuelStationId String?
+  fuelStation   FuelStation? @relation(fields: [fuelStationId], references: [id])
+
+  @@index([fuelStationId], map: "fuel_prices_fuelStationId_fkey")
+  @@map("fuel_prices")
+}
+
+model QuotaSettings {
+  id          String      @id @default(cuid())
+  vehicleType VehicleType
+  fuelType    FuelType
+  weeklyLimit Float
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([vehicleType, fuelType])
+  @@map("quota_settings")
+}
+
+model SmsLog {
+  id          String   @id @default(cuid())
+  phoneNumber String
+  message     String
+  messageType String
+  status      String
+  twilioSid   String?
+  sentAt      DateTime @default(now())
+
+  @@index([phoneNumber])
+  @@index([status])
+  @@map("sms_logs")
+}
+
 enum VehicleType {
   CAR
   MOTORCYCLE
   SCOOTER
-  THREE_WHEELER // Tuk-tuk/Auto rickshaw
+  THREE_WHEELER
   VAN
-  LORRY // Truck 
+  LORRY
   BUS
   HEAVY_VEHICLE
   SPECIAL_PURPOSE_VEHICLE
@@ -23,7 +324,6 @@ enum VehicleType {
   OTHER
 }
 
-// enum for fuel types
 enum FuelType {
   PETROL_92_OCTANE
   PETROL_95_OCTANE
@@ -32,16 +332,6 @@ enum FuelType {
   KEROSENE
 }
 
-// enum for registration status
-enum RegistrationStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  SUSPENDED
-  EXPIRED
-}
-
-// enum for transaction status
 enum TransactionStatus {
   COMPLETED
   FAILED
@@ -49,7 +339,6 @@ enum TransactionStatus {
   CANCELLED
 }
 
-// enum for user types
 enum UserType {
   VEHICLE_OWNER
   FUEL_STATION_OWNER
@@ -57,18 +346,6 @@ enum UserType {
   ADMIN_USER
 }
 
-// enum for user roles
-enum UserRole {
-  SUPER_ADMIN
-  ADMIN
-  DMT_OFFICER
-  FUEL_COORDINATOR
-  STATION_MANAGER
-  OPERATOR
-  VIEWER
-}
-
-// enum for provinces
 enum Province {
   WESTERN
   CENTRAL
@@ -81,406 +358,30 @@ enum Province {
   SABARAGAMUWA
 }
 
-// enum for districts
 enum District {
-  // Western Province
   COLOMBO
   GAMPAHA
   KALUTARA
-  // Central Province
   KANDY
   MATALE
   NUWARA_ELIYA
-  // Southern Province
   GALLE
   MATARA
   HAMBANTOTA
-  // Northern Province
   JAFFNA
   KILINOCHCHI
   MANNAR
   VAVUNIYA
   MULLATIVU
-  // Eastern Province
   TRINCOMALEE
   BATTICALOA
   AMPARA
-  // North Western Province
   KURUNEGALA
   PUTTALAM
-  // North Central Province
   ANURADHAPURA
   POLONNARUWA
-  // Uva Province
   BADULLA
   MONARAGALA
-  // Sabaragamuwa Province
   RATNAPURA
   KEGALLE
-}
-
-// Role Management
-model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relationships
-  permissions RolePermission[]
-  userRoles   UserRole_Assignment[]
-
-  @@map("roles")
-}
-
-// Permission Management
-model Permission {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  module      String
-  action      String
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relationships
-  rolePermissions RolePermission[]
-
-  @@unique([module, action])
-  @@map("permissions")
-}
-
-// Role-Permission mapping (many-to-many relationship)
-model RolePermission {
-  roleId       String
-  permissionId String
-  createdAt    DateTime @default(now())
-
-  // Relationships
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@map("role_permissions")
-}
-
-// Session Management
-model Session {
-  id             String   @id @default(cuid())
-  sessionId      String   @unique @default(uuid())
-  userId         String
-  ipAddress      String?
-  userAgent      String?
-  isActive       Boolean  @default(true)
-  expiresAt      DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  lastAccessedAt DateTime @default(now())
-
-  // Relationships
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([sessionId])
-  @@index([userId])
-  @@map("sessions")
-}
-
-// Address normalization
-model Address {
-  id           String   @id @default(cuid())
-  addressLine1 String
-  addressLine2 String?
-  city         String
-  district     District
-  province     Province
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Relationships
-  users        User[]
-  fuelStations FuelStation[]
-
-  @@map("addresses")
-}
-
-// General User model (normalized)
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  firstName     String
-  lastName      String
-  phoneNumber   String    @unique
-  nicNumber     String    @unique // National Identity Card number
-  userType      UserType
-  isActive      Boolean   @default(true)
-  emailVerified Boolean   @default(false)
-  phoneVerified Boolean   @default(false)
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  // Foreign keys
-  addressId String
-
-  // Relationships
-  address   Address               @relation(fields: [addressId], references: [id])
-  userRoles UserRole_Assignment[]
-  sessions  Session[]
-
-  // Type-specific relationships
-  vehicleOwner        VehicleOwner?
-  fuelStationOwner    FuelStationOwner?
-  fuelStationOperator FuelStationOperator?
-  adminUser           AdminUser?
-
-  @@map("users")
-}
-
-// Vehicle Owner model (specific details)
-model VehicleOwner {
-  id               String   @id @default(cuid())
-  registrationDate DateTime @default(now())
-
-  // Foreign keys
-  userId String @unique
-
-  // Relationships
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicles Vehicle[]
-
-  @@map("vehicle_owners")
-}
-
-// Vehicle model with Sri Lankan specifics
-model Vehicle {
-  id                 String      @id @default(cuid())
-  registrationNumber String      @unique // Format: ABC-1234 or 12-1234
-  chassisNumber      String      @unique
-  engineNumber       String
-  make               String
-  model              String
-  vehicleType        VehicleType
-  fuelType           FuelType
-  qrCode             String?     @unique
-  qrCodeGeneratedAt  DateTime?
-  monthlyQuotaLimit  Float       @default(0) // in liters
-  currentQuotaUsed   Float       @default(0) // in liters
-  quotaResetDate     DateTime?
-  isActive           Boolean     @default(true)
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-
-  // Foreign keys
-  ownerId String
-
-  // Relationships
-  owner            VehicleOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  fuelTransactions FuelTransaction[]
-  dmtValidations   DMTValidation[]
-
-  @@map("vehicles")
-}
-
-// DMT (Department of Motor Traffic) Validation model
-model DMTValidation {
-  id                 String @id @default(cuid())
-  vehicleId          String
-  registrationNumber String
-  chassisNumber      String
-  engineNumber       String
-  ownerNic           String
-  ownerName          String
-
-  // Relationships
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-
-  @@map("dmt_validations")
-}
-
-// Fuel Station Owner model (specific details)
-model FuelStationOwner {
-  id            String @id @default(cuid())
-  businessRegNo String @unique
-  businessName  String
-
-  // Foreign keys
-  userId String @unique
-
-  // Relationships
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fuelStations FuelStation[]
-
-  @@map("fuel_station_owners")
-}
-
-// Fuel Station model
-model FuelStation {
-  id            String   @id @default(cuid())
-  stationCode   String   @unique // e.g., IOC001, CEYPETCO002
-  name          String
-  phoneNumber   String
-  licenseNumber String   @unique
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Foreign keys
-  ownerId   String
-  addressId String
-
-  // Relationships
-  owner            FuelStationOwner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  address          Address               @relation(fields: [addressId], references: [id])
-  operators        FuelStationOperator[]
-  fuelTransactions FuelTransaction[]
-  fuelInventory    FuelInventory[]
-  fuelPrices       FuelPrice[]
-
-  @@map("fuel_stations")
-}
-
-// Fuel Station Operator model (specific details for mobile app users)
-model FuelStationOperator {
-  id         String @id @default(cuid())
-  employeeId String @unique
-
-  // Foreign keys
-  userId        String @unique
-  fuelStationId String
-
-  // Relationships
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fuelStation      FuelStation       @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
-  fuelTransactions FuelTransaction[]
-
-  @@map("fuel_station_operators")
-}
-
-// Admin User model (specific details)
-model AdminUser {
-  id String @id @default(cuid())
-
-  // Foreign keys
-  userId String @unique
-
-  // Relationships
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("admin_users")
-}
-
-// User Role Assignment (normalized)
-model UserRole_Assignment {
-  id         String   @id @default(cuid())
-  userId     String
-  roleId     String
-  assignedAt DateTime @default(now())
-  isActive   Boolean  @default(true)
-
-  // Relationships
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id])
-
-  @@unique([userId, roleId])
-  @@map("user_role_assignments")
-}
-
-// Fuel Transaction model
-model FuelTransaction {
-  id                String            @id @default(cuid())
-  transactionNumber String            @unique @default(cuid())
-  fuelType          FuelType
-  quantity          Float // in liters
-  pricePerLiter     Float
-  totalAmount       Float // in LKR
-  status            TransactionStatus @default(COMPLETED)
-  qrCodeScanned     String
-  smsStatus         String? // SMS delivery status
-  smsId             String? // Twilio SMS ID
-  quotaBefore       Float // quota before transaction
-  quotaAfter        Float // quota after transaction
-  transactionDate   DateTime          @default(now())
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-
-  // Foreign keys
-  vehicleId     String
-  fuelStationId String
-  operatorId    String
-
-  // Relationships
-  vehicle     Vehicle             @relation(fields: [vehicleId], references: [id])
-  fuelStation FuelStation         @relation(fields: [fuelStationId], references: [id])
-  operator    FuelStationOperator @relation(fields: [operatorId], references: [id])
-
-  @@map("fuel_transactions")
-}
-
-// Fuel Inventory model
-model FuelInventory {
-  id               String    @id @default(cuid())
-  fuelType         FuelType
-  currentStock     Float // in liters
-  minimumLevel     Float // minimum stock level
-  maximumLevel     Float // maximum stock level
-  lastRefillDate   DateTime?
-  lastRefillAmount Float?
-  lastUpdated      DateTime  @default(now())
-
-  // Foreign keys
-  fuelStationId String
-
-  // Relationships
-  fuelStation FuelStation @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
-
-  @@unique([fuelStationId, fuelType])
-  @@map("fuel_inventory")
-}
-
-// Fuel Price model (for different fuel types and stations)
-model FuelPrice {
-  id            String   @id @default(cuid())
-  fuelType      FuelType
-  pricePerLiter Float // in LKR
-  createdAt     DateTime @default(now())
-
-  // Foreign keys
-  fuelStationId String? // null means national price
-
-  // Relationships
-  fuelStation FuelStation? @relation(fields: [fuelStationId], references: [id])
-
-  @@map("fuel_prices")
-}
-
-// Quota Settings model (normalized by vehicle type and fuel type)
-model QuotaSettings {
-  id          String      @id @default(cuid())
-  vehicleType VehicleType
-  fuelType    FuelType
-  weeklyLimit Float // in liters   // Higher authority approval
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@unique([vehicleType, fuelType])
-  @@map("quota_settings")
-}
-
-// SMS Log model
-model SmsLog {
-  id          String   @id @default(cuid())
-  phoneNumber String
-  message     String
-  messageType String // transaction, alert, verification, etc.
-  status      String // sent, failed, delivered, etc.
-  twilioSid   String? // Twilio SMS ID
-  sentAt      DateTime @default(now())
-
-  @@index([phoneNumber])
-  @@index([status])
-  @@map("sms_logs")
 }
