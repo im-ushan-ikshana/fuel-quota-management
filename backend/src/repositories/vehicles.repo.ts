@@ -13,7 +13,7 @@ export interface CreateVehicleData {
   model: string;
   vehicleType: VehicleType;
   fuelType: FuelType;
-  monthlyQuotaLimit: number;
+  weeklyQuotaLiters: number;
   ownerId: string;
 }
 
@@ -59,15 +59,14 @@ class VehicleRepository {
       return await this.prismaService.transaction(async (prisma) => {
         // Generate QR code (simple UUID for now, can be enhanced)
         const qrCode = `VH_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Create vehicle
+          // Create vehicle
         const vehicle = await prisma.vehicle.create({
           data: {
             ...vehicleData,
             qrCode,
             qrCodeGeneratedAt: new Date(),
-            currentQuotaUsed: 0,
-            quotaResetDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1), // First day of next month
+            currentWeekUsed: 0,
+            weekStartDate: new Date(), // Current week start
           },
           include: {
             owner: {
@@ -300,7 +299,6 @@ class VehicleRepository {
       throw handlePrismaError(error, 'getting vehicle transactions');
     }
   }
-
   /**
    * Update vehicle quota after fuel consumption
    */
@@ -316,29 +314,33 @@ class VehicleRepository {
           throw new Error('Vehicle not found');
         }
 
-        // Check if quota reset is needed (monthly reset)
+        // Check if quota reset is needed (weekly reset)
         const now = new Date();
-        const quotaResetDate = vehicle.quotaResetDate;
+        const weekStartDate = vehicle.weekStartDate;
         
-        let currentQuotaUsed = vehicle.currentQuotaUsed;
+        let currentWeekUsed = vehicle.currentWeekUsed;
         
-        if (quotaResetDate && now >= quotaResetDate) {
-          // Reset quota to 0 and set next reset date
-          currentQuotaUsed = 0;
-          const nextResetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        if (weekStartDate) {
+          // Calculate if a week has passed (7 days)
+          const daysSinceStart = Math.floor((now.getTime() - weekStartDate.getTime()) / (1000 * 60 * 60 * 24));
           
-          await prisma.vehicle.update({
-            where: { id: vehicleId },
-            data: {
-              currentQuotaUsed: 0,
-              quotaResetDate: nextResetDate,
-            },
-          });
+          if (daysSinceStart >= 7) {
+            // Reset quota to 0 and set new week start date
+            currentWeekUsed = 0;
+            
+            await prisma.vehicle.update({
+              where: { id: vehicleId },
+              data: {
+                currentWeekUsed: 0,
+                weekStartDate: now,
+              },
+            });
+          }
         }
 
         // Check if sufficient quota is available
-        const newQuotaUsed = currentQuotaUsed + fuelUsed;
-        if (newQuotaUsed > vehicle.monthlyQuotaLimit) {
+        const newQuotaUsed = currentWeekUsed + fuelUsed;
+        if (newQuotaUsed > vehicle.weeklyQuotaLiters) {
           throw new Error('Insufficient quota remaining');
         }
 
@@ -346,11 +348,11 @@ class VehicleRepository {
         const updatedVehicle = await prisma.vehicle.update({
           where: { id: vehicleId },
           data: {
-            currentQuotaUsed: newQuotaUsed,
+            currentWeekUsed: newQuotaUsed,
           },
         });
 
-        logger.info(`Updated quota for vehicle ${vehicleId}: ${newQuotaUsed}/${vehicle.monthlyQuotaLimit}`);
+        logger.info(`Updated quota for vehicle ${vehicleId}: ${newQuotaUsed}/${vehicle.weeklyQuotaLiters} liters`);
         return updatedVehicle;
       });
     } catch (error) {
@@ -358,7 +360,6 @@ class VehicleRepository {
       throw handlePrismaError(error, 'updating vehicle quota');
     }
   }
-
   /**
    * Get vehicle quota information
    */
@@ -372,9 +373,9 @@ class VehicleRepository {
       const vehicle = await this.prismaService.getClient().vehicle.findUnique({
         where: { id: vehicleId, isActive: true },
         select: {
-          monthlyQuotaLimit: true,
-          currentQuotaUsed: true,
-          quotaResetDate: true,
+          weeklyQuotaLiters: true,
+          currentWeekUsed: true,
+          weekStartDate: true,
         },
       });
 
@@ -383,10 +384,10 @@ class VehicleRepository {
       }
 
       return {
-        allocatedQuota: vehicle.monthlyQuotaLimit,
-        usedQuota: vehicle.currentQuotaUsed,
-        remainingQuota: vehicle.monthlyQuotaLimit - vehicle.currentQuotaUsed,
-        resetDate: vehicle.quotaResetDate,
+        allocatedQuota: vehicle.weeklyQuotaLiters,
+        usedQuota: vehicle.currentWeekUsed,
+        remainingQuota: vehicle.weeklyQuotaLiters - vehicle.currentWeekUsed,
+        resetDate: vehicle.weekStartDate,
       };
     } catch (error) {
       logger.error(`Error getting vehicle quota:`, error);
