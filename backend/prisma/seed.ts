@@ -1,550 +1,638 @@
+import { PrismaClient } from '@prisma/client';
 import { 
-  PrismaClient, 
-  UserType, 
   VehicleType, 
   FuelType, 
+  UserType, 
   Province, 
-  District,
-  TransactionStatus 
-} from '@prisma/client'
-import bcrypt from 'bcrypt'
+  District 
+} from '@prisma/client';
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting database seeding...')
+  console.log('🌱 Starting database seeding...');
 
-  // Hash password for demo users
-  const hashedPassword = await bcrypt.hash('password123', 10)
+  try {    // Clean existing data (in reverse dependency order)
+    console.log('🗑️ Cleaning existing data...');
+    await prisma.fuelTransaction.deleteMany();
+    await prisma.fuelInventory.deleteMany();
+    await prisma.dMTValidation.deleteMany();
+    await prisma.vehicle.deleteMany();
+    await prisma.vehicleOwner.deleteMany();
+    await prisma.fuelStationOperator.deleteMany();
+    await prisma.fuelStation.deleteMany();
+    await prisma.fuelStationOwner.deleteMany();
+    await prisma.adminUser.deleteMany();
+    await prisma.userRole_Assignment.deleteMany();
+    await prisma.session.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.address.deleteMany();
+    await prisma.rolePermission.deleteMany();
+    await prisma.permission.deleteMany();
+    await prisma.role.deleteMany();
+    await prisma.quotaSettings.deleteMany();
+    await prisma.smsLog.deleteMany();
 
-  // 1) Create Roles
-  console.log('Creating roles...')
-  const [adminRole, vehicleOwnerRole, stationOwnerRole, operatorRole] = await Promise.all([
-    prisma.role.create({ 
-      data: { 
-        name: 'ADMIN', 
-        description: 'System Administrator with full access' 
-      } 
-    }),
-    prisma.role.create({ 
-      data: { 
-        name: 'VEHICLE_OWNER', 
-        description: 'Vehicle Owner with access to vehicle management' 
-      } 
-    }),
-    prisma.role.create({ 
-      data: { 
-        name: 'STATION_OWNER', 
-        description: 'Fuel Station Owner with station management access' 
-      } 
-    }),
-    prisma.role.create({ 
-      data: { 
-        name: 'STATION_OPERATOR', 
-        description: 'Fuel Station Operator with transaction access' 
-      } 
-    }),
-  ])
-
-  // 2) Create Permissions
-  console.log('Creating permissions...')
-  const permissions = await Promise.all([
-    prisma.permission.create({ data: { name: 'MANAGE_USERS', module: 'User', action: 'MANAGE', description: 'Manage all users' } }),
-    prisma.permission.create({ data: { name: 'VIEW_USERS', module: 'User', action: 'VIEW', description: 'View users' } }),
-    prisma.permission.create({ data: { name: 'MANAGE_VEHICLES', module: 'Vehicle', action: 'MANAGE', description: 'Manage vehicles' } }),
-    prisma.permission.create({ data: { name: 'VIEW_VEHICLES', module: 'Vehicle', action: 'VIEW', description: 'View vehicles' } }),
-    prisma.permission.create({ data: { name: 'MANAGE_STATIONS', module: 'Station', action: 'MANAGE', description: 'Manage fuel stations' } }),
-    prisma.permission.create({ data: { name: 'VIEW_STATIONS', module: 'Station', action: 'VIEW', description: 'View fuel stations' } }),
-    prisma.permission.create({ data: { name: 'PROCESS_TRANSACTIONS', module: 'Transaction', action: 'CREATE', description: 'Process fuel transactions' } }),
-    prisma.permission.create({ data: { name: 'VIEW_TRANSACTIONS', module: 'Transaction', action: 'VIEW', description: 'View transactions' } }),
-    prisma.permission.create({ data: { name: 'MANAGE_INVENTORY', module: 'Inventory', action: 'MANAGE', description: 'Manage fuel inventory' } }),
-    prisma.permission.create({ data: { name: 'VIEW_REPORTS', module: 'Reports', action: 'VIEW', description: 'View system reports' } }),
-  ])
-
-  // 3) Assign permissions to roles
-  console.log('Assigning permissions to roles...')
-  await Promise.all([
-    // ADMIN gets all permissions
-    ...permissions.map(p => 
-      prisma.rolePermission.create({ 
-        data: { roleId: adminRole.id, permissionId: p.id } 
-      })
-    ),
-    // VEHICLE_OWNER permissions
-    prisma.rolePermission.create({ data: { roleId: vehicleOwnerRole.id, permissionId: permissions.find(p => p.name === 'VIEW_VEHICLES')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: vehicleOwnerRole.id, permissionId: permissions.find(p => p.name === 'VIEW_TRANSACTIONS')!.id } }),
-    // STATION_OWNER permissions
-    prisma.rolePermission.create({ data: { roleId: stationOwnerRole.id, permissionId: permissions.find(p => p.name === 'MANAGE_STATIONS')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: stationOwnerRole.id, permissionId: permissions.find(p => p.name === 'VIEW_STATIONS')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: stationOwnerRole.id, permissionId: permissions.find(p => p.name === 'MANAGE_INVENTORY')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: stationOwnerRole.id, permissionId: permissions.find(p => p.name === 'VIEW_TRANSACTIONS')!.id } }),
-    // STATION_OPERATOR permissions
-    prisma.rolePermission.create({ data: { roleId: operatorRole.id, permissionId: permissions.find(p => p.name === 'PROCESS_TRANSACTIONS')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: operatorRole.id, permissionId: permissions.find(p => p.name === 'VIEW_TRANSACTIONS')!.id } }),
-    prisma.rolePermission.create({ data: { roleId: operatorRole.id, permissionId: permissions.find(p => p.name === 'VIEW_VEHICLES')!.id } }),
-  ])
-
-  // 4) Create Addresses (covering all provinces and districts)
-  console.log('Creating addresses...')
-  const addresses = await Promise.all([
-    // Western Province
-    prisma.address.create({ data: { addressLine1: '123 Galle Road', city: 'Colombo', district: District.COLOMBO, province: Province.WESTERN } }),
-    prisma.address.create({ data: { addressLine1: '45 Kandy Road', city: 'Gampaha', district: District.GAMPAHA, province: Province.WESTERN } }),
-    prisma.address.create({ data: { addressLine1: '78 Main Street', city: 'Kalutara', district: District.KALUTARA, province: Province.WESTERN } }),
-    
-    // Central Province
-    prisma.address.create({ data: { addressLine1: '100 Peradeniya Road', city: 'Kandy', district: District.KANDY, province: Province.CENTRAL } }),
-    prisma.address.create({ data: { addressLine1: '25 Temple Street', city: 'Matale', district: District.MATALE, province: Province.CENTRAL } }),
-    prisma.address.create({ data: { addressLine1: '67 Hill Station Road', city: 'Nuwara Eliya', district: District.NUWARA_ELIYA, province: Province.CENTRAL } }),
-    
-    // Southern Province
-    prisma.address.create({ data: { addressLine1: '89 Wakwella Road', city: 'Galle', district: District.GALLE, province: Province.SOUTHERN } }),
-    prisma.address.create({ data: { addressLine1: '156 Beach Road', city: 'Matara', district: District.MATARA, province: Province.SOUTHERN } }),
-    prisma.address.create({ data: { addressLine1: '34 Harbor Road', city: 'Hambantota', district: District.HAMBANTOTA, province: Province.SOUTHERN } }),
-    
-    // Northern Province
-    prisma.address.create({ data: { addressLine1: '200 Hospital Road', city: 'Jaffna', district: District.JAFFNA, province: Province.NORTHERN } }),
-    prisma.address.create({ data: { addressLine1: '89 Main Street', city: 'Kilinochchi', district: District.KILINOCHCHI, province: Province.NORTHERN } }),
-    
-    // Eastern Province
-    prisma.address.create({ data: { addressLine1: '75 Harbor Road', city: 'Trincomalee', district: District.TRINCOMALEE, province: Province.EASTERN } }),
-    prisma.address.create({ data: { addressLine1: '120 Station Road', city: 'Batticaloa', district: District.BATTICALOA, province: Province.EASTERN } }),
-    
-    // North Western Province
-    prisma.address.create({ data: { addressLine1: '90 Clock Tower Road', city: 'Kurunegala', district: District.KURUNEGALA, province: Province.NORTH_WESTERN } }),
-    
-    // North Central Province
-    prisma.address.create({ data: { addressLine1: '180 Sacred City Road', city: 'Anuradhapura', district: District.ANURADHAPURA, province: Province.NORTH_CENTRAL } }),
-    
-    // Uva Province
-    prisma.address.create({ data: { addressLine1: '95 Hill Station Road', city: 'Badulla', district: District.BADULLA, province: Province.UVA } }),
-    
-    // Sabaragamuwa Province
-    prisma.address.create({ data: { addressLine1: '110 Gem City Road', city: 'Ratnapura', district: District.RATNAPURA, province: Province.SABARAGAMUWA } }),
-    prisma.address.create({ data: { addressLine1: '140 Mountain Road', city: 'Kegalle', district: District.KEGALLE, province: Province.SABARAGAMUWA } }),
-  ])
-
-  // Utility function to get random address
-  const getRandomAddress = () => addresses[Math.floor(Math.random() * addresses.length)]
-
-  // 5) Create Quota Settings for different vehicle and fuel types
-  console.log('Creating quota settings...')
-  const vehicleTypes = Object.values(VehicleType)
-  const fuelTypes = Object.values(FuelType)
-  
-  await Promise.all(
-    vehicleTypes.flatMap(vehicleType =>
-      fuelTypes.map(fuelType => {
-        let weeklyLimit = 0
-        
-        // Set realistic quota limits based on vehicle and fuel type
-        switch (vehicleType) {
-          case VehicleType.CAR:
-            weeklyLimit = fuelType.includes('DIESEL') ? 60 : 50
-            break
-          case VehicleType.MOTORCYCLE:
-          case VehicleType.SCOOTER:
-            weeklyLimit = 20
-            break
-          case VehicleType.THREE_WHEELER:
-            weeklyLimit = 25
-            break
-          case VehicleType.VAN:
-            weeklyLimit = fuelType.includes('DIESEL') ? 80 : 70
-            break
-          case VehicleType.LORRY:
-          case VehicleType.BUS:
-            weeklyLimit = fuelType.includes('DIESEL') ? 200 : 150
-            break
-          case VehicleType.HEAVY_VEHICLE:
-            weeklyLimit = fuelType.includes('DIESEL') ? 300 : 250
-            break
-          case VehicleType.BOAT:
-            weeklyLimit = 100
-            break
-          default:
-            weeklyLimit = 40
-        }
-        
-        return prisma.quotaSettings.create({
-          data: {
-            vehicleType,
-            fuelType,
-            weeklyLimit
-          }
-        })
-      })
-    )
-  )
-
-  // 6) Create ADMIN users
-  console.log('Creating admin users...')
-  const adminUsers = await Promise.all(
-    Array.from({ length: 3 }, (_, i) =>
-      prisma.user.create({
+    // 1. Create Addresses first (no dependencies)
+    console.log('📍 Creating addresses...');
+    const addresses = await Promise.all([
+      prisma.address.create({
         data: {
-          email: `admin${i + 1}@fuelmanagement.lk`,
-          password: hashedPassword,
-          firstName: `Admin`,
-          lastName: `User${i + 1}`,
-          phoneNumber: `0711000${(i + 1).toString().padStart(3, '0')}`,
-          nicNumber: `9${(70000000 + i).toString()}V`,
-          userType: UserType.ADMIN_USER,
-          emailVerified: true,
-          phoneVerified: true,
-          addressId: getRandomAddress().id,
+          addressLine1: '123 Galle Road',
+          addressLine2: 'Colombo 03',
+          city: 'Colombo',
+          district: District.COLOMBO,
+          province: Province.WESTERN,
         },
-      })
-    )
-  )
-
-  // Create AdminUser records
-  await Promise.all(
-    adminUsers.map(user => 
-      prisma.adminUser.create({ data: { userId: user.id } })
-    )
-  )
-
-  // 7) Create VEHICLE_OWNER users and their vehicles
-  console.log('Creating vehicle owners...')
-  const vehicleOwnerUsers = await Promise.all(
-    Array.from({ length: 15 }, (_, i) =>
-      prisma.user.create({
+      }),
+      prisma.address.create({
         data: {
-          email: `owner${i + 1}@example.com`,
-          password: hashedPassword,
-          firstName: `Vehicle`,
-          lastName: `Owner${i + 1}`,
-          phoneNumber: `0772000${(i + 1).toString().padStart(3, '0')}`,
-          nicNumber: `9${(80000000 + i).toString()}V`,
-          userType: UserType.VEHICLE_OWNER,
-          emailVerified: true,
-          phoneVerified: true,
-          addressId: getRandomAddress().id,
+          addressLine1: '456 Kandy Road',
+          city: 'Kandy',
+          district: District.KANDY,
+          province: Province.CENTRAL,
         },
-      })
-    )
-  )
-
-  const vehicleOwners = await Promise.all(
-    vehicleOwnerUsers.map(user =>
-      prisma.vehicleOwner.create({ 
-        data: { 
-          userId: user.id,
-          registrationDate: new Date()
-        } 
-      })
-    )
-  )
-
-  // 8) Create Vehicles (2-4 per owner)
-  console.log('Creating vehicles...')
-  const allVehicles: any[] = []
-  for (const [ownerIndex, owner] of vehicleOwners.entries()) {
-    const vehicleCount = Math.floor(Math.random() * 3) + 2 // 2-4 vehicles per owner
-    
-    for (let j = 0; j < vehicleCount; j++) {
-      const vehicleType = vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)]
-      const fuelType = fuelTypes[Math.floor(Math.random() * fuelTypes.length)]
-      
-      // Get quota settings for this vehicle/fuel combination
-      const quotaSettings = await prisma.quotaSettings.findUnique({
-        where: {
-          vehicleType_fuelType: {
-            vehicleType,
-            fuelType
-          }
-        }
-      })
-      
-      const vehicle = await prisma.vehicle.create({
+      }),
+      prisma.address.create({
         data: {
-          registrationNumber: `${vehicleType.substring(0, 2)}${ownerIndex + 1}${j + 1}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
-          chassisNumber: `CHS${ownerIndex + 1}${j + 1}${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-          engineNumber: `ENG${ownerIndex + 1}${j + 1}${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-          make: ['Toyota', 'Honda', 'Nissan', 'Suzuki', 'Mitsubishi', 'Hyundai'][Math.floor(Math.random() * 6)],
-          model: `Model${j + 1}`,
-          vehicleType,
-          fuelType,
-          monthlyQuotaLimit: quotaSettings ? quotaSettings.weeklyLimit * 4 : 100, // 4 weeks in a month
-          currentQuotaUsed: Math.floor(Math.random() * 50), // Random current usage
-          ownerId: owner.id,
-          qrCode: `QR_${ownerIndex + 1}_${j + 1}_${Date.now()}`,
-          qrCodeGeneratedAt: new Date(),
-          quotaResetDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1), // Next month
+          addressLine1: '789 Main Street',
+          addressLine2: 'Matara Town',
+          city: 'Matara',
+          district: District.MATARA,
+          province: Province.SOUTHERN,
         },
-      })
-      
-      allVehicles.push(vehicle)
+      }),
+      prisma.address.create({
+        data: {
+          addressLine1: '321 Temple Road',
+          city: 'Jaffna',
+          district: District.JAFFNA,
+          province: Province.NORTHERN,
+        },
+      }),
+      prisma.address.create({
+        data: {
+          addressLine1: '654 Beach Road',
+          city: 'Batticaloa',
+          district: District.BATTICALOA,
+          province: Province.EASTERN,
+        },
+      }),
+    ]);
+
+    // 2. Create Roles
+    console.log('👥 Creating roles...');
+    const adminRole = await prisma.role.create({
+      data: {
+        name: 'Super Admin',
+        description: 'Full system access and control',
+      },
+    });
+
+    const stationOwnerRole = await prisma.role.create({
+      data: {
+        name: 'Fuel Station Owner',
+        description: 'Fuel station owner permissions',
+      },
+    });
+
+    const operatorRole = await prisma.role.create({
+      data: {
+        name: 'Fuel Station Operator',
+        description: 'Fuel station operator permissions',
+      },
+    });
+
+    const vehicleOwnerRole = await prisma.role.create({
+      data: {
+        name: 'Vehicle Owner',
+        description: 'Vehicle owner permissions',
+      },
+    });
+
+    // 3. Create Permissions
+    console.log('🔐 Creating permissions...');
+    const permissions = await Promise.all([
+      // User management permissions
+      prisma.permission.create({
+        data: {
+          name: 'Create User',
+          module: 'USER',
+          action: 'CREATE',
+          description: 'Create new users',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Read User',
+          module: 'USER',
+          action: 'READ',
+          description: 'View user information',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Update User',
+          module: 'USER',
+          action: 'UPDATE',
+          description: 'Update user information',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Delete User',
+          module: 'USER',
+          action: 'DELETE',
+          description: 'Delete users',
+        },
+      }),
+      // Vehicle management permissions
+      prisma.permission.create({
+        data: {
+          name: 'Create Vehicle',
+          module: 'VEHICLE',
+          action: 'CREATE',
+          description: 'Register new vehicles',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Read Vehicle',
+          module: 'VEHICLE',
+          action: 'READ',
+          description: 'View vehicle information',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Update Vehicle',
+          module: 'VEHICLE',
+          action: 'UPDATE',
+          description: 'Update vehicle information',
+        },
+      }),
+      // Fuel station permissions
+      prisma.permission.create({
+        data: {
+          name: 'Manage Fuel Station',
+          module: 'FUEL_STATION',
+          action: 'MANAGE',
+          description: 'Manage fuel station operations',
+        },
+      }),
+      prisma.permission.create({
+        data: {
+          name: 'Process Transaction',
+          module: 'TRANSACTION',
+          action: 'CREATE',
+          description: 'Process fuel transactions',
+        },
+      }),
+      // Admin permissions
+      prisma.permission.create({
+        data: {
+          name: 'System Admin',
+          module: 'SYSTEM',
+          action: 'ADMIN',
+          description: 'Full system administration',
+        },
+      }),
+    ]);
+
+    // 4. Assign permissions to roles
+    console.log('🔗 Assigning permissions to roles...');
+    // Admin gets all permissions
+    for (const permission of permissions) {
+      await prisma.rolePermission.create({
+        data: {
+          roleId: adminRole.id,
+          permissionId: permission.id,
+        },
+      });
     }
-  }
 
-  // 9) Create DMTValidation records for all vehicles
-  console.log('Creating DMT validations...')
-  await Promise.all(
-    allVehicles.map((vehicle: any) => {
-      const owner = vehicleOwnerUsers.find(user => 
-        vehicleOwners.find(vo => vo.id === vehicle.ownerId)?.userId === user.id
-      )!
+    // Station owner gets station and transaction permissions
+    await prisma.rolePermission.create({
+      data: {
+        roleId: stationOwnerRole.id,
+        permissionId: permissions.find(p => p.name === 'Manage Fuel Station')!.id,
+      },
+    });
+
+    // Operator gets transaction permissions
+    await prisma.rolePermission.create({
+      data: {
+        roleId: operatorRole.id,
+        permissionId: permissions.find(p => p.name === 'Process Transaction')!.id,
+      },
+    });
+
+    // Vehicle owner gets vehicle read permissions
+    await prisma.rolePermission.create({
+      data: {
+        roleId: vehicleOwnerRole.id,
+        permissionId: permissions.find(p => p.name === 'Read Vehicle')!.id,
+      },
+    });
+
+    // 5. Create Users
+    console.log('👤 Creating users...');
+    const adminUser = await prisma.user.create({
+      data: {
+        email: 'admin@fuelquota.gov.lk',
+        password: '$2b$10$hashedpassword1', // In real app, this should be properly hashed
+        firstName: 'System',
+        lastName: 'Administrator',
+        phoneNumber: '+94711234567',
+        nicNumber: '199012345678',
+        userType: UserType.ADMIN_USER,
+        emailVerified: true,
+        phoneVerified: true,
+        addressId: addresses[0].id,
+      },
+    });
+
+    const stationOwnerUser = await prisma.user.create({
+      data: {
+        email: 'owner1@ceypetco.lk',
+        password: '$2b$10$hashedpassword2',
+        firstName: 'Sunil',
+        lastName: 'Perera',
+        phoneNumber: '+94712345678',
+        nicNumber: '198512345679',
+        userType: UserType.FUEL_STATION_OWNER,
+        emailVerified: true,
+        phoneVerified: true,
+        addressId: addresses[1].id,
+      },
+    });
+
+    const operatorUser = await prisma.user.create({
+      data: {
+        email: 'operator1@ceypetco.lk',
+        password: '$2b$10$hashedpassword3',
+        firstName: 'Kamal',
+        lastName: 'Silva',
+        phoneNumber: '+94713456789',
+        nicNumber: '199212345680',
+        userType: UserType.FUEL_STATION_OPERATOR,
+        emailVerified: true,
+        phoneVerified: true,
+        addressId: addresses[2].id,
+      },
+    });
+
+    const vehicleOwnerUser1 = await prisma.user.create({
+      data: {
+        email: 'owner1@gmail.com',
+        password: '$2b$10$hashedpassword4',
+        firstName: 'Nimal',
+        lastName: 'Fernando',
+        phoneNumber: '+94714567890',
+        nicNumber: '198812345681',
+        userType: UserType.VEHICLE_OWNER,
+        emailVerified: true,
+        phoneVerified: true,
+        addressId: addresses[3].id,
+      },
+    });
+
+    const vehicleOwnerUser2 = await prisma.user.create({
+      data: {
+        email: 'owner2@gmail.com',
+        password: '$2b$10$hashedpassword5',
+        firstName: 'Saman',
+        lastName: 'Rajapaksa',
+        phoneNumber: '+94715678901',
+        nicNumber: '199512345682',
+        userType: UserType.VEHICLE_OWNER,
+        emailVerified: true,
+        phoneVerified: true,
+        addressId: addresses[4].id,
+      },
+    });
+
+    // 6. Create specific user types
+    console.log('🏢 Creating specific user types...');
+    const adminUserRecord = await prisma.adminUser.create({
+      data: {
+        userId: adminUser.id,
+      },
+    });
+
+    const fuelStationOwner = await prisma.fuelStationOwner.create({
+      data: {
+        businessRegNo: 'BR001234567',
+        businessName: 'Perera Fuel Station (Pvt) Ltd',
+        userId: stationOwnerUser.id,
+      },
+    });
+
+    const vehicleOwner1 = await prisma.vehicleOwner.create({
+      data: {
+        userId: vehicleOwnerUser1.id,
+      },
+    });
+
+    const vehicleOwner2 = await prisma.vehicleOwner.create({
+      data: {
+        userId: vehicleOwnerUser2.id,
+      },
+    });
+
+    // 7. Create Fuel Stations
+    console.log('⛽ Creating fuel stations...');
+    const fuelStation1 = await prisma.fuelStation.create({
+      data: {
+        stationCode: 'FS001',
+        name: 'Colombo Main Fuel Station',
+        phoneNumber: '+94112234567',
+        licenseNumber: 'FL001234567',
+        ownerId: fuelStationOwner.id,
+        addressId: addresses[0].id,
+      },
+    });
+
+    const fuelStation2 = await prisma.fuelStation.create({
+      data: {
+        stationCode: 'FS002',
+        name: 'Kandy Central Fuel Station',
+        phoneNumber: '+94812234567',
+        licenseNumber: 'FL001234568',
+        ownerId: fuelStationOwner.id,
+        addressId: addresses[1].id,
+      },
+    });
+
+    // 8. Create Fuel Station Operator
+    console.log('👨‍💼 Creating fuel station operators...');
+    const operator1 = await prisma.fuelStationOperator.create({
+      data: {
+        employeeId: 'EMP001',
+        fuelStationId: fuelStation1.id,
+        userId: operatorUser.id,
+      },
+    });
+
+    // 9. Create Quota Settings
+    console.log('📊 Creating quota settings...');
+    const quotaSettings = [
+      // Car quotas
+      { vehicleType: VehicleType.CAR, fuelType: FuelType.PETROL_92_OCTANE, weeklyLimitLiters: 25.0 },
+      { vehicleType: VehicleType.CAR, fuelType: FuelType.PETROL_95_OCTANE, weeklyLimitLiters: 25.0 },
+      { vehicleType: VehicleType.CAR, fuelType: FuelType.AUTO_DIESEL, weeklyLimitLiters: 30.0 },
       
-      return prisma.dMTValidation.create({
-        data: {
-          vehicleId: vehicle.id,
-          registrationNumber: vehicle.registrationNumber,
-          chassisNumber: vehicle.chassisNumber,
-          engineNumber: vehicle.engineNumber,
-          ownerNic: owner.nicNumber,
-          ownerName: `${owner.firstName} ${owner.lastName}`,
-        },
-      })
-    })
-  )
-
-  // 10) Create FUEL_STATION_OWNER users and their stations
-  console.log('Creating fuel station owners...')
-  const stationOwnerUsers = await Promise.all(
-    Array.from({ length: 10 }, (_, i) =>
-      prisma.user.create({
-        data: {
-          email: `stationowner${i + 1}@fuelstations.lk`,
-          password: hashedPassword,
-          firstName: `Station`,
-          lastName: `Owner${i + 1}`,
-          phoneNumber: `0773000${(i + 1).toString().padStart(3, '0')}`,
-          nicNumber: `9${(60000000 + i).toString()}V`,
-          userType: UserType.FUEL_STATION_OWNER,
-          emailVerified: true,
-          phoneVerified: true,
-          addressId: getRandomAddress().id,
-        },
-      })
-    )
-  )
-
-  const stationOwners = await Promise.all(
-    stationOwnerUsers.map((user, i) =>
-      prisma.fuelStationOwner.create({
-        data: {
-          userId: user.id,
-          businessRegNo: `BRN${(200000 + i).toString()}`,
-          businessName: `Fuel Station Business ${i + 1}`,
-        },
-      })
-    )
-  )
-
-  // 11) Create Fuel Stations
-  console.log('Creating fuel stations...')
-  const fuelStations = await Promise.all(
-    stationOwners.map((owner, i) =>
-      prisma.fuelStation.create({
-        data: {
-          stationCode: `FS${(i + 1).toString().padStart(3, '0')}`,
-          name: `${addresses[i % addresses.length].city} Fuel Station ${i + 1}`,
-          phoneNumber: `0114000${(i + 1).toString().padStart(3, '0')}`,
-          licenseNumber: `LIC${(300000 + i).toString()}`,
-          ownerId: owner.id,
-          addressId: addresses[i % addresses.length].id,
-        },
-      })
-    )
-  )
-
-  // 12) Create Fuel Inventory for each station
-  console.log('Creating fuel inventory...')
-  await Promise.all(
-    fuelStations.flatMap(station =>
-      fuelTypes.map(fuelType =>
-        prisma.fuelInventory.create({
-          data: {
-            fuelStationId: station.id,
-            fuelType,
-            currentStock: Math.floor(Math.random() * 10000) + 5000, // 5000-15000 liters
-            minimumLevel: 1000,
-            maximumLevel: 20000,
-            lastRefillDate: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // Random date within last week
-            lastRefillAmount: Math.floor(Math.random() * 5000) + 2000,
-          },
-        })
-      )
-    )
-  )
-
-  // 13) Create Fuel Prices for each station
-  console.log('Creating fuel prices...')
-  await Promise.all(
-    fuelStations.flatMap(station =>
-      fuelTypes.map(fuelType => {
-        let basePrice = 0
-        switch (fuelType) {
-          case FuelType.PETROL_92_OCTANE:
-            basePrice = 365
-            break
-          case FuelType.PETROL_95_OCTANE:
-            basePrice = 385
-            break
-          case FuelType.AUTO_DIESEL:
-            basePrice = 320
-            break
-          case FuelType.SUPER_DIESEL:
-            basePrice = 340
-            break
-          case FuelType.KEROSENE:
-            basePrice = 310
-            break
-        }
-        
-        // Add small random variation per station
-        const variation = (Math.random() - 0.5) * 10 // ±5 LKR
-        
-        return prisma.fuelPrice.create({
-          data: {
-            fuelStationId: station.id,
-            fuelType,
-            pricePerLiter: Math.round((basePrice + variation) * 100) / 100, // Round to 2 decimal places
-          },
-        })
-      })
-    )
-  )
-
-  // 14) Create FUEL_STATION_OPERATOR users
-  console.log('Creating fuel station operators...')
-  const operatorUsers = await Promise.all(
-    Array.from({ length: 20 }, (_, i) =>
-      prisma.user.create({
-        data: {
-          email: `operator${i + 1}@fuelstations.lk`,
-          password: hashedPassword,
-          firstName: `Operator`,
-          lastName: `${i + 1}`,
-          phoneNumber: `0774000${(i + 1).toString().padStart(3, '0')}`,
-          nicNumber: `9${(50000000 + i).toString()}V`,
-          userType: UserType.FUEL_STATION_OPERATOR,
-          emailVerified: true,
-          phoneVerified: true,
-          addressId: getRandomAddress().id,
-        },
-      })
-    )
-  )
-
-  const operators = await Promise.all(
-    operatorUsers.map((user, i) =>
-      prisma.fuelStationOperator.create({
-        data: {
-          userId: user.id,
-          employeeId: `EMP${(i + 1).toString().padStart(4, '0')}`,
-          fuelStationId: fuelStations[i % fuelStations.length].id,
-        },
-      })
-    )
-  )
-
-  // 15) Create User Role Assignments
-  console.log('Creating user role assignments...')
-  const allUsers = [
-    ...adminUsers,
-    ...vehicleOwnerUsers,
-    ...stationOwnerUsers,
-    ...operatorUsers,
-  ]
-
-  await Promise.all(
-    allUsers.map(user => {
-      let roleId = adminRole.id
+      // Motorcycle quotas
+      { vehicleType: VehicleType.MOTORCYCLE, fuelType: FuelType.PETROL_92_OCTANE, weeklyLimitLiters: 4.0 },
+      { vehicleType: VehicleType.MOTORCYCLE, fuelType: FuelType.PETROL_95_OCTANE, weeklyLimitLiters: 4.0 },
       
-      switch (user.userType) {
-        case UserType.VEHICLE_OWNER:
-          roleId = vehicleOwnerRole.id
-          break
-        case UserType.FUEL_STATION_OWNER:
-          roleId = stationOwnerRole.id
-          break
-        case UserType.FUEL_STATION_OPERATOR:
-          roleId = operatorRole.id
-          break
-        case UserType.ADMIN_USER:
-          roleId = adminRole.id
-          break
+      // Three-wheeler quotas
+      { vehicleType: VehicleType.THREE_WHEELER, fuelType: FuelType.PETROL_92_OCTANE, weeklyLimitLiters: 7.5 },
+      { vehicleType: VehicleType.THREE_WHEELER, fuelType: FuelType.AUTO_DIESEL, weeklyLimitLiters: 10.0 },
+      
+      // Van quotas
+      { vehicleType: VehicleType.VAN, fuelType: FuelType.AUTO_DIESEL, weeklyLimitLiters: 40.0 },
+      { vehicleType: VehicleType.VAN, fuelType: FuelType.PETROL_92_OCTANE, weeklyLimitLiters: 35.0 },
+      
+      // Bus quotas
+      { vehicleType: VehicleType.BUS, fuelType: FuelType.AUTO_DIESEL, weeklyLimitLiters: 150.0 },
+      
+      // Heavy vehicle quotas
+      { vehicleType: VehicleType.HEAVY_VEHICLE, fuelType: FuelType.AUTO_DIESEL, weeklyLimitLiters: 200.0 },
+      { vehicleType: VehicleType.HEAVY_VEHICLE, fuelType: FuelType.SUPER_DIESEL, weeklyLimitLiters: 200.0 },
+    ];
+
+    for (const setting of quotaSettings) {
+      await prisma.quotaSettings.create({
+        data: setting,
+      });
+    }
+
+    // 10. Create Vehicles
+    console.log('🚗 Creating vehicles...');
+    const currentWeekStart = new Date();
+    currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Start of current week
+
+    const vehicle1 = await prisma.vehicle.create({
+      data: {
+        registrationNumber: 'CAR-1234',
+        chassisNumber: 'CH001234567890123',
+        engineNumber: 'EN001234567',
+        make: 'Toyota',
+        model: 'Prius',
+        vehicleType: VehicleType.CAR,
+        fuelType: FuelType.PETROL_92_OCTANE,
+        qrCode: 'QR001234567890',
+        qrCodeGeneratedAt: new Date(),
+        weeklyQuotaLiters: 25.0,
+        currentWeekUsed: 15.5,
+        weekStartDate: currentWeekStart,
+        ownerId: vehicleOwner1.id,
+      },
+    });
+
+    const vehicle2 = await prisma.vehicle.create({
+      data: {
+        registrationNumber: 'BIKE-5678',
+        chassisNumber: 'CH001234567890124',
+        engineNumber: 'EN001234568',
+        make: 'Honda',
+        model: 'CB150R',
+        vehicleType: VehicleType.MOTORCYCLE,
+        fuelType: FuelType.PETROL_92_OCTANE,
+        qrCode: 'QR001234567891',
+        qrCodeGeneratedAt: new Date(),
+        weeklyQuotaLiters: 4.0,
+        currentWeekUsed: 2.5,
+        weekStartDate: currentWeekStart,
+        ownerId: vehicleOwner2.id,
+      },
+    });
+
+    const vehicle3 = await prisma.vehicle.create({
+      data: {
+        registrationNumber: 'VAN-9012',
+        chassisNumber: 'CH001234567890125',
+        engineNumber: 'EN001234569',
+        make: 'Nissan',
+        model: 'Caravan',
+        vehicleType: VehicleType.VAN,
+        fuelType: FuelType.AUTO_DIESEL,
+        qrCode: 'QR001234567892',
+        qrCodeGeneratedAt: new Date(),
+        weeklyQuotaLiters: 40.0,
+        currentWeekUsed: 20.0,
+        weekStartDate: currentWeekStart,
+        ownerId: vehicleOwner1.id,
+      },
+    });    // 11. Create DMT Validations
+    console.log('📋 Creating DMT validations...');
+    await prisma.dMTValidation.create({
+      data: {
+        vehicleId: vehicle1.id,
+        registrationNumber: vehicle1.registrationNumber,
+        chassisNumber: vehicle1.chassisNumber,
+        engineNumber: vehicle1.engineNumber,
+        ownerNic: vehicleOwnerUser1.nicNumber,
+        ownerName: `${vehicleOwnerUser1.firstName} ${vehicleOwnerUser1.lastName}`,
+      },
+    });
+
+    await prisma.dMTValidation.create({
+      data: {
+        vehicleId: vehicle2.id,
+        registrationNumber: vehicle2.registrationNumber,
+        chassisNumber: vehicle2.chassisNumber,
+        engineNumber: vehicle2.engineNumber,
+        ownerNic: vehicleOwnerUser2.nicNumber,
+        ownerName: `${vehicleOwnerUser2.firstName} ${vehicleOwnerUser2.lastName}`,
+      },
+    });
+
+    // 12. Create Fuel Inventory
+    console.log('🛢️ Creating fuel inventory...');
+    const fuelTypes = [FuelType.PETROL_92_OCTANE, FuelType.PETROL_95_OCTANE, FuelType.AUTO_DIESEL, FuelType.SUPER_DIESEL];
+    
+    for (const station of [fuelStation1, fuelStation2]) {
+      for (const fuelType of fuelTypes) {
+        await prisma.fuelInventory.create({
+          data: {
+            fuelType,
+            currentStockLiters: 10000.0,
+            minimumLevelLiters: 1000.0,
+            maximumLevelLiters: 50000.0,
+            lastRefillDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+            lastRefillLiters: 40000.0,
+            fuelStationId: station.id,
+          },
+        });
       }
-      
-      return prisma.userRole_Assignment.create({
-        data: {
-          userId: user.id,
-          roleId,
-        },
-      })
-    })
-  )
+    }
 
-  // 16) Create some sample fuel transactions
-  console.log('Creating sample fuel transactions...')
-  await Promise.all(
-    Array.from({ length: 50 }, (_, i) => {
-      const vehicle = allVehicles[Math.floor(Math.random() * allVehicles.length)]
-      const station = fuelStations[Math.floor(Math.random() * fuelStations.length)]
-      const operator = operators.find(op => op.fuelStationId === station.id) || operators[0]
-      
-      const quantity = Math.random() * 50 + 10 // 10-60 liters
-      const pricePerLiter = 350 + Math.random() * 50 // 350-400 LKR per liter
-      const totalAmount = quantity * pricePerLiter
-      
-      return prisma.fuelTransaction.create({
-        data: {
-          fuelType: vehicle.fuelType,
-          quantity: Math.round(quantity * 100) / 100,
-          pricePerLiter: Math.round(pricePerLiter * 100) / 100,
-          totalAmount: Math.round(totalAmount * 100) / 100,
-          status: TransactionStatus.COMPLETED,
-          qrCodeScanned: vehicle.qrCode || `QR_${vehicle.id}`,
-          quotaBefore: vehicle.currentQuotaUsed,
-          quotaAfter: vehicle.currentQuotaUsed + quantity,
-          vehicleId: vehicle.id,
-          fuelStationId: station.id,
-          operatorId: operator.id,
-          transactionDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Random date within last 30 days
-        },
-      })
-    })
-  )
+    // 13. Create User Role Assignments
+    console.log('🎭 Creating user role assignments...');
+    await prisma.userRole_Assignment.create({
+      data: {
+        userId: adminUser.id,
+        roleId: adminRole.id,
+      },
+    });
 
-  // 17) Create some SMS logs
-  console.log('Creating SMS logs...')
-  await Promise.all(
-    Array.from({ length: 30 }, (_, i) => {
-      const user = allUsers[Math.floor(Math.random() * allUsers.length)]
-      
-      return prisma.smsLog.create({
-        data: {
-          phoneNumber: user.phoneNumber,
-          message: `Fuel transaction completed. Transaction ID: TXN${i + 1}. Thank you for using our service.`,
-          messageType: 'TRANSACTION_CONFIRMATION',
-          status: 'SENT',
-          twilioSid: `SM${Math.random().toString(36).substring(2, 15)}`,
-        },
-      })
-    })
-  )
+    await prisma.userRole_Assignment.create({
+      data: {
+        userId: stationOwnerUser.id,
+        roleId: stationOwnerRole.id,
+      },
+    });
 
-  console.log('🎉 Database seeding completed successfully!')
-  console.log('📊 Summary:')
-  console.log(`   • ${adminUsers.length} Admin users`)
-  console.log(`   • ${vehicleOwnerUsers.length} Vehicle owners`)
-  console.log(`   • ${allVehicles.length} Vehicles`)
-  console.log(`   • ${stationOwnerUsers.length} Station owners`)
-  console.log(`   • ${fuelStations.length} Fuel stations`)
-  console.log(`   • ${operatorUsers.length} Station operators`)
-  console.log(`   • ${permissions.length} Permissions`)
-  console.log(`   • ${addresses.length} Addresses across all provinces`)
-  console.log(`   • Fuel inventory and prices for all stations`)
-  console.log(`   • 50 sample fuel transactions`)
-  console.log(`   • 30 SMS log entries`)
+    await prisma.userRole_Assignment.create({
+      data: {
+        userId: operatorUser.id,
+        roleId: operatorRole.id,
+      },
+    });
+
+    await prisma.userRole_Assignment.create({
+      data: {
+        userId: vehicleOwnerUser1.id,
+        roleId: vehicleOwnerRole.id,
+      },
+    });
+
+    await prisma.userRole_Assignment.create({
+      data: {
+        userId: vehicleOwnerUser2.id,
+        roleId: vehicleOwnerRole.id,
+      },
+    });
+
+    // 14. Create Fuel Transactions
+    console.log('⛽ Creating fuel transactions...');
+    await prisma.fuelTransaction.create({
+      data: {
+        fuelType: FuelType.PETROL_92_OCTANE,
+        quantityLiters: 10.0,
+        quotaBefore: 25.0,
+        quotaAfter: 15.0,
+        qrCodeScanned: vehicle1.qrCode!,
+        transactionDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+        vehicleId: vehicle1.id,
+        fuelStationId: fuelStation1.id,
+        operatorId: operator1.id,
+      },
+    });
+
+    await prisma.fuelTransaction.create({
+      data: {
+        fuelType: FuelType.PETROL_92_OCTANE,
+        quantityLiters: 2.5,
+        quotaBefore: 4.0,
+        quotaAfter: 1.5,
+        qrCodeScanned: vehicle2.qrCode!,
+        transactionDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+        vehicleId: vehicle2.id,
+        fuelStationId: fuelStation1.id,
+        operatorId: operator1.id,
+      },
+    });
+
+    // 15. Create Sessions
+    console.log('🔑 Creating sessions...');
+    await prisma.session.create({
+      data: {
+        sessionId: 'sess_admin_12345',
+        userId: adminUser.id,
+        ipAddress: '192.168.1.100',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+      },
+    });
+
+    // 16. Create SMS Logs
+    console.log('📱 Creating SMS logs...');
+    await prisma.smsLog.create({
+      data: {
+        phoneNumber: vehicleOwnerUser1.phoneNumber,
+        message: 'Your fuel quota has been updated. Current balance: 15.0L',
+        messageType: 'QUOTA_UPDATE',
+        status: 'SENT',
+        twilioSid: 'SM1234567890abcdef',
+      },
+    });
+
+    await prisma.smsLog.create({
+      data: {
+        phoneNumber: vehicleOwnerUser2.phoneNumber,
+        message: 'Fuel transaction completed. Quantity: 2.5L. Remaining quota: 1.5L',
+        messageType: 'TRANSACTION_CONFIRMATION',
+        status: 'SENT',
+        twilioSid: 'SM1234567890abcdeg',
+      },
+    });
+
+    console.log('✅ Database seeding completed successfully!');
+    console.log('\n📊 Seeded data summary:');
+    console.log(`- Addresses: ${addresses.length}`);
+    console.log(`- Roles: 4`);
+    console.log(`- Permissions: ${permissions.length}`);
+    console.log(`- Users: 5`);
+    console.log(`- Fuel Stations: 2`);
+    console.log(`- Vehicles: 3`);
+    console.log(`- Quota Settings: ${quotaSettings.length}`);
+    console.log(`- Fuel Transactions: 2`);
+    console.log(`- SMS Logs: 2`);
+
+  } catch (error) {
+    console.error('❌ Error during seeding:', error);
+    throw error;
+  }
 }
 
 main()
-  .catch(e => {
-    console.error('❌ Error during seeding:', e)
-    process.exit(1)
+  .catch((e) => {
+    console.error('❌ Seeding failed:', e);
+    process.exit(1);
   })
-  .finally(() => prisma.$disconnect())
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
