@@ -74,7 +74,7 @@ export class AuthController {
       }: RegisterUserData = req.body;
 
       // Validate required fields
-      const requiredFields = {
+      let requiredFields = {
         email,
         password,
         firstName,
@@ -92,6 +92,42 @@ export class AuthController {
           message: `Missing required fields: ${missingFields.map(([key]) => key).join(', ')}`
         });
         return;
+      }      // Validate user type is one of the allowed types
+      if (!Object.values(UserType).includes(userType)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid user type'
+        });
+        return;
+      }
+      
+      // Currently only supporting FUEL_STATION_OWNER and VEHICLE_OWNER registrations
+      if (userType !== UserType.FUEL_STATION_OWNER && userType !== UserType.VEHICLE_OWNER) {
+        res.status(400).json({
+          success: false,
+          message: 'Only Fuel Station Owners and Vehicle Owners can register'
+        });
+        return;
+      }
+      
+      if (userType === UserType.FUEL_STATION_OWNER) {
+        if (!req.body.stationInfo) {
+          res.status(400).json({
+            success: false,
+            message: 'Fuel station information is required for Fuel Station Owners'
+          });
+          return;
+        }
+      }
+      
+      if (userType === UserType.VEHICLE_OWNER) {
+        if (!req.body.vehicleInfo) {
+          res.status(400).json({
+            success: false,
+            message: 'Vehicle information is required for Vehicle Owners'
+          });
+          return;
+        }
       }
 
       // Validate email format
@@ -147,9 +183,7 @@ export class AuthController {
           message: 'Complete address information is required'
         });
         return;
-      }
-
-      // Validate district and province
+      }      // Validate district and province
       if (!Object.values(District).includes(address.district)) {
         res.status(400).json({
           success: false,
@@ -164,12 +198,10 @@ export class AuthController {
           message: 'Invalid province'
         });
         return;
-      }
-
-      // Get client IP and user agent
+      }      // Get client IP and user agent
       const { ipAddress, userAgent } = this.getClientInfo(req);
-
-      // Register user
+      
+      // Process the registration
       const result = await this.authService.registerUser(req.body, ipAddress, userAgent);
 
       if (result.success) {
