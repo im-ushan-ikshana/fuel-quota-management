@@ -1,7 +1,7 @@
 import PrismaService from '../services/prisma.services';
 import { handlePrismaError } from '../utils/prisma.middleware';
 import { createLogger } from '../utils/logger';
-import { UserType, RegistrationStatus, District, Province } from '@prisma/client';
+import { UserType, District, Province } from '@prisma/client';
 
 const logger = createLogger('AuthRepository');
 
@@ -37,8 +37,8 @@ export interface UserWithRelations {
     addressLine1: string;
     addressLine2: string | null;
     city: string;
-    district: string;
-    province: string;
+    district: District;
+    province: Province;
   };
   userRoles?: {
     id: string;
@@ -59,6 +59,14 @@ export interface SessionData {
   ipAddress?: string;
   userAgent?: string;
   expiresAt: Date;
+}
+
+export interface CreateAddressData {
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  district: District;
+  province: Province;
 }
 
 class AuthRepository {
@@ -229,7 +237,7 @@ class AuthRepository {
       });
     } catch (error) {
       logger.error('Error updating last login:', error);
-      throw handlePrismaError(error, 'updating last login time');
+      throw handlePrismaError(error, 'updating user last login');
     }
   }
 
@@ -254,6 +262,26 @@ class AuthRepository {
   }
 
   /**
+   * Update phone verification status
+   */
+  async updatePhoneVerification(userId: string, verified: boolean): Promise<void> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          phoneVerified: verified,
+          updatedAt: new Date()
+        }
+      });
+    } catch (error) {
+      logger.error('Error updating phone verification:', error);
+      throw handlePrismaError(error, 'updating phone verification');
+    }
+  }
+
+  /**
    * Create a new session
    */
   async createSession(sessionData: SessionData): Promise<{ sessionId: string }> {
@@ -261,9 +289,15 @@ class AuthRepository {
       const prisma = this.prismaService.getClient();
       
       const session = await prisma.session.create({
-        data: sessionData
+        data: {
+          userId: sessionData.userId,
+          ipAddress: sessionData.ipAddress,
+          userAgent: sessionData.userAgent,
+          expiresAt: sessionData.expiresAt,
+          isActive: true
+        }
       });
-
+      
       return { sessionId: session.sessionId };
     } catch (error) {
       logger.error('Error creating session:', error);
@@ -279,7 +313,13 @@ class AuthRepository {
       const prisma = this.prismaService.getClient();
       
       return await prisma.session.findUnique({
-        where: { sessionId },
+        where: { 
+          sessionId,
+          isActive: true,
+          expiresAt: {
+            gt: new Date()
+          }
+        },
         include: {
           user: {
             include: {
@@ -309,11 +349,14 @@ class AuthRepository {
       
       await prisma.session.update({
         where: { sessionId },
-        data: { lastAccessedAt: new Date() }
+        data: { 
+          lastAccessedAt: new Date(),
+          updatedAt: new Date()
+        }
       });
     } catch (error) {
       logger.error('Error updating session last accessed:', error);
-      throw handlePrismaError(error, 'updating session last accessed time');
+      throw handlePrismaError(error, 'updating session last accessed');
     }
   }
 
@@ -326,7 +369,10 @@ class AuthRepository {
       
       await prisma.session.update({
         where: { sessionId },
-        data: { isActive: false }
+        data: { 
+          isActive: false,
+          updatedAt: new Date()
+        }
       });
     } catch (error) {
       logger.error('Error invalidating session:', error);
@@ -349,29 +395,26 @@ class AuthRepository {
           ]
         }
       });
-
+      
       return result.count;
     } catch (error) {
       logger.error('Error deleting expired sessions:', error);
       throw handlePrismaError(error, 'deleting expired sessions');
     }
   }
+
   /**
-   * Create address (helper function for user registration)
+   * Create address
    */
-  async createAddress(addressData: {
-    addressLine1: string;
-    addressLine2?: string;
-    city: string;
-    district: District;
-    province: Province;
-  }) {
+  async createAddress(addressData: CreateAddressData): Promise<{ id: string }> {
     try {
       const prisma = this.prismaService.getClient();
       
-      return await prisma.address.create({
+      const address = await prisma.address.create({
         data: addressData
       });
+      
+      return { id: address.id };
     } catch (error) {
       logger.error('Error creating address:', error);
       throw handlePrismaError(error, 'creating address');
@@ -389,20 +432,127 @@ class AuthRepository {
     try {
       const prisma = this.prismaService.getClient();
       
-      const [emailCheck, phoneCheck, nicCheck] = await Promise.all([
+      const [emailUser, phoneUser, nicUser] = await Promise.all([
         prisma.user.findUnique({ where: { email }, select: { id: true } }),
         prisma.user.findUnique({ where: { phoneNumber }, select: { id: true } }),
         prisma.user.findUnique({ where: { nicNumber }, select: { id: true } })
       ]);
-
+      
       return {
-        emailExists: !!emailCheck,
-        phoneExists: !!phoneCheck,
-        nicExists: !!nicCheck
+        emailExists: !!emailUser,
+        phoneExists: !!phoneUser,
+        nicExists: !!nicUser
       };
     } catch (error) {
       logger.error('Error checking user existence:', error);
       throw handlePrismaError(error, 'checking user existence');
+    }
+  }
+
+  /**
+   * Assign role to user
+   */
+  async assignUserRole(userId: string, roleId: string): Promise<void> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      await prisma.userRole_Assignment.create({
+        data: {
+          userId,
+          roleId,
+          isActive: true
+        }
+      });
+    } catch (error) {
+      logger.error('Error assigning user role:', error);
+      throw handlePrismaError(error, 'assigning user role');
+    }
+  }
+
+  /**
+   * Remove role from user
+   */
+  async removeUserRole(userId: string, roleId: string): Promise<void> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      await prisma.userRole_Assignment.updateMany({
+        where: { userId, roleId },
+        data: { isActive: false }
+      });
+    } catch (error) {
+      logger.error('Error removing user role:', error);
+      throw handlePrismaError(error, 'removing user role');
+    }
+  }
+
+  /**
+   * Get user roles
+   */
+  async getUserRoles(userId: string) {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      return await prisma.userRole_Assignment.findMany({
+        where: { 
+          userId,
+          isActive: true
+        },
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true
+                }
+              }
+            }
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting user roles:', error);
+      throw handlePrismaError(error, 'getting user roles');
+    }
+  }
+
+  /**
+   * Deactivate user account
+   */
+  async deactivateUser(userId: string): Promise<void> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          isActive: false,
+          updatedAt: new Date()
+        }
+      });
+    } catch (error) {
+      logger.error('Error deactivating user:', error);
+      throw handlePrismaError(error, 'deactivating user');
+    }
+  }
+
+  /**
+   * Activate user account
+   */
+  async activateUser(userId: string): Promise<void> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          isActive: true,
+          updatedAt: new Date()
+        }
+      });
+    } catch (error) {
+      logger.error('Error activating user:', error);
+      throw handlePrismaError(error, 'activating user');
     }
   }
 }
