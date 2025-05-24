@@ -279,6 +279,40 @@ class VehicleService {
   }
 
   /**
+   * Get all DMT validations for testing
+   */
+  async getAllDMTValidations(): Promise<any[]> {
+    try {
+      logger.info('Fetching all DMT validations');
+      
+      const dmtValidations = await this.vehicleRepository.getAllDMTValidations();
+      
+      logger.info(`Found ${dmtValidations.length} DMT validations`);
+      return dmtValidations;
+    } catch (error) {
+      logger.error('Error fetching all DMT validations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get count of DMT validations
+   */
+  async getDMTValidationsCount(): Promise<number> {
+    try {
+      logger.info('Counting DMT validations');
+      
+      const count = await this.vehicleRepository.getDMTValidationsCount();
+      
+      logger.info(`Total DMT validations: ${count}`);
+      return count;
+    } catch (error) {
+      logger.error('Error counting DMT validations:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Validate vehicle registration data
    */
   private validateVehicleData(vehicleData: RegisterVehicleRequest): void {
