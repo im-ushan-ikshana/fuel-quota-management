@@ -1,45 +1,63 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import axios from 'axios';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  // Tab state (vehicle or station)
-  const [activeTab, setActiveTab] = useState<'vehicle' | 'station'>('vehicle');
-  
-  // Vehicle login form state
-  const [vehicleNumber, setVehicleNumber] = useState('');
-  const [showMobileVerification, setShowMobileVerification] = useState(false);
-  const [mobileVerification, setMobileVerification] = useState('');
-  
-  // Station login form state
-  const [stationEmail, setStationEmail] = useState('');
-  const [stationPassword, setStationPassword] = useState('');
-  
-  // Handle vehicle verification step
-  const handleVehicleSubmit = (e: React.FormEvent) => {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Handle login submission
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (vehicleNumber) {
-      setShowMobileVerification(true);
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // Make API call to login
+      const response = await axios.post('http://localhost:4000/api/v1/auth/login', {
+        email,
+        password
+      });
+
+      console.log('Login successful:', response.data);
+      
+      // Store auth token and user data in localStorage or cookies
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        
+        if (rememberMe) {
+          localStorage.setItem('rememberedEmail', email);
+        } else {
+          localStorage.removeItem('rememberedEmail');
+        }
+        
+        // Redirect based on user type (or to a general dashboard)
+        router.push('/dashboard');
+      }
+    } catch (err: any) {
+      console.error('Login failed:', err);
+      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setIsLoading(false);
     }
   };
-  
-  // Handle final vehicle login
-  const handleMobileVerificationSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Logic to verify OTP and authenticate vehicle owner
-    console.log('Vehicle login:', { vehicleNumber, mobileVerification });
-    // Redirect to dashboard or show success message
-  };
-  
-  // Handle station login
-  const handleStationSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Logic to authenticate fuel station
-    console.log('Station login:', { stationEmail, stationPassword });
-    // Redirect to station dashboard or show error
-  };
+
+  // Check for remembered email on component mount
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem('rememberedEmail');
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
@@ -67,171 +85,95 @@ export default function LoginPage() {
         
         {/* Login container */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          {/* Tab navigation */}
-          <div className="flex mb-6 border-b border-gray-200 dark:border-gray-700">
-            <button
-              onClick={() => setActiveTab('vehicle')}
-              className={`px-4 py-2 flex-1 text-center font-medium text-sm rounded-t-lg transition-colors ${
-                activeTab === 'vehicle'
-                  ? 'text-green-600 dark:text-green-500 border-b-2 border-green-600 dark:border-green-500'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
-              Vehicle Owner
-            </button>
-            <button
-              onClick={() => setActiveTab('station')}
-              className={`px-4 py-2 flex-1 text-center font-medium text-sm rounded-t-lg transition-colors ${
-                activeTab === 'station'
-                  ? 'text-green-600 dark:text-green-500 border-b-2 border-green-600 dark:border-green-500'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
-              Fuel Station
-            </button>
-          </div>
-          
-          {/* Vehicle Owner Login Form */}
-          {activeTab === 'vehicle' && (
-            <div className="space-y-6">
-              {!showMobileVerification ? (
-                <form onSubmit={handleVehicleSubmit} className="space-y-4">
-                  <div>
-                    <label htmlFor="vehicleNumber" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Vehicle Registration Number
-                    </label>
-                    <input
-                      id="vehicleNumber"
-                      name="vehicleNumber"
-                      type="text"
-                      autoComplete="off"
-                      required
-                      placeholder="e.g., ABC-1234"
-                      value={vehicleNumber}
-                      onChange={(e) => setVehicleNumber(e.target.value)}
-                      className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <button
-                      type="submit"
-                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-300"
-                    >
-                      Proceed
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <form onSubmit={handleMobileVerificationSubmit} className="space-y-4">
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-md p-3 mb-4">
-                    <p className="text-sm text-green-700 dark:text-green-400">
-                      Verification code sent to registered mobile number for vehicle {vehicleNumber}
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <label htmlFor="mobileVerification" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Enter Verification Code
-                    </label>
-                    <input
-                      id="mobileVerification"
-                      name="mobileVerification"
-                      type="text"
-                      autoComplete="one-time-code"
-                      required
-                      placeholder="Enter 6-digit code"
-                      value={mobileVerification}
-                      onChange={(e) => setMobileVerification(e.target.value)}
-                      className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
-                    />
-                  </div>
-                  
-                  <div className="flex space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowMobileVerification(false)}
-                      className="group relative flex-1 flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-300"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="submit"
-                      className="group relative flex-1 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-300"
-                    >
-                      Verify
-                    </button>
-                  </div>
-                </form>
-              )}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 rounded-md p-3 mb-4">
+              <p className="text-sm text-red-700 dark:text-red-400">
+                {error}
+              </p>
             </div>
           )}
           
-          {/* Fuel Station Login Form */}
-          {activeTab === 'station' && (
-            <form onSubmit={handleStationSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Email Address
-                </label>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Email or Phone Number
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="text"
+                autoComplete="email"
+                required
+                placeholder="Enter your email or phone number"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                placeholder=""
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
+              />
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  placeholder="station@example.com"
-                  value={stationEmail}
-                  onChange={(e) => setStationEmail(e.target.value)}
-                  className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-green-600 dark:text-green-500 focus:ring-green-500 dark:focus:ring-green-400 border-gray-300 dark:border-gray-600 rounded"
                 />
-              </div>
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Password
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                  Remember me
                 </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  placeholder="••••••••"
-                  value={stationPassword}
-                  onChange={(e) => setStationPassword(e.target.value)}
-                  className="appearance-none relative block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-green-500 dark:focus:ring-green-400 focus:border-green-500 dark:focus:border-green-400 sm:text-sm"
-                />
               </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <input
-                    id="remember-me"
-                    name="remember-me"
-                    type="checkbox"
-                    className="h-4 w-4 text-green-600 dark:text-green-500 focus:ring-green-500 dark:focus:ring-green-400 border-gray-300 dark:border-gray-600 rounded"
-                  />
-                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-                    Remember me
-                  </label>
-                </div>
 
-                <div className="text-sm">
-                  <a href="#" className="font-medium text-green-600 dark:text-green-400 hover:text-green-500 dark:hover:text-green-300">
-                    Forgot password?
-                  </a>
-                </div>
+              <div className="text-sm">
+                <Link href="/forgot-password" className="font-medium text-green-600 dark:text-green-400 hover:text-green-500 dark:hover:text-green-300">
+                  Forgot password?
+                </Link>
               </div>
-              
-              <div>
-                <button
-                  type="submit"
-                  className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-300"
-                >
-                  Sign in
-                </button>
-              </div>
-            </form>
-          )}
+            </div>
+            
+            <div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
+                  isLoading 
+                    ? 'bg-green-400 dark:bg-green-600 cursor-not-allowed' 
+                    : 'bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600'
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-300`}
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </div>
+          </form>
         </div>
         
         {/* Help and register links */}
