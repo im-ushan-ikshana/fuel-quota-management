@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { AuthenticatedRequest } from '../utils/permissions';
-import AuthService, { RegisterUserData, LoginData, VerificationData, PasswordResetData } from '../services/auth.services';
+import AuthService, { RegisterUserData, LoginData, VerificationData, PasswordResetData, CreateOperatorData } from '../services/auth.services';
 import { createLogger } from '../utils/logger';
 import { UserType, District, Province } from '@prisma/client';
 
@@ -936,13 +936,179 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: 'Expired sessions cleaned up successfully'
-      });
-
-    } catch (error) {
+      });    } catch (error) {
       this.logger.error('Error cleaning up sessions:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error during session cleanup'
+      });
+    }
+  }
+
+  /**
+   * Create fuel station operator (Admin only)
+   */
+  public async createOperator(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      // Verify user is authenticated and is an admin
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+        return;
+      }
+
+      if (req.user.userType !== UserType.ADMIN_USER) {
+        res.status(403).json({
+          success: false,
+          message: 'Only admin users can create fuel station operators'
+        });
+        return;
+      }
+
+      const {
+        email,
+        password,
+        firstName,
+        lastName,
+        phoneNumber,
+        nicNumber,
+        address,
+        employeeId,
+        fuelStationId
+      }: CreateOperatorData = req.body;
+
+      // Validate required fields
+      const requiredFields = {
+        email,
+        password,
+        firstName,
+        lastName,
+        phoneNumber,
+        nicNumber,
+        address,
+        employeeId,
+        fuelStationId
+      };
+
+      const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value);
+      if (missingFields.length > 0) {
+        res.status(400).json({
+          success: false,
+          message: `Missing required fields: ${missingFields.map(([key]) => key).join(', ')}`
+        });
+        return;
+      }
+
+      // Validate email format
+      if (!this.validateEmail(email)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+        return;
+      }
+
+      // Validate password strength
+      const passwordValidation = this.validatePassword(password);
+      if (!passwordValidation.valid) {
+        res.status(400).json({
+          success: false,
+          message: passwordValidation.message
+        });
+        return;
+      }
+
+      // Validate phone number
+      if (!this.validatePhoneNumber(phoneNumber)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid Sri Lankan phone number format'
+        });
+        return;
+      }
+
+      // Validate NIC
+      if (!this.validateNIC(nicNumber)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid Sri Lankan NIC number format'
+        });
+        return;
+      }
+
+      // Validate address
+      if (!address.addressLine1 || !address.city || !address.district || !address.province) {
+        res.status(400).json({
+          success: false,
+          message: 'Address must include addressLine1, city, district, and province'
+        });
+        return;
+      }
+
+      // Validate district and province are valid enum values
+      if (!Object.values(District).includes(address.district)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid district'
+        });
+        return;
+      }
+
+      if (!Object.values(Province).includes(address.province)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid province'
+        });
+        return;
+      }
+
+      // Get client info for session
+      const { ipAddress, userAgent } = this.getClientInfo(req);
+
+      // Create the operator
+      const result = await this.authService.createOperator(
+        {
+          email,
+          password,
+          firstName,
+          lastName,
+          phoneNumber,
+          nicNumber,
+          address,
+          employeeId,
+          fuelStationId
+        },
+        ipAddress,
+        userAgent
+      );
+
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+
+      this.logger.info(`Admin ${req.user.email} created fuel station operator: ${email}`);      res.status(201).json({
+        success: true,
+        message: result.message,
+        user: {
+          id: result.user!.id,
+          email: result.user!.email,
+          firstName: result.user!.firstName,
+          lastName: result.user!.lastName,
+          phoneNumber: result.user!.phoneNumber,
+          userType: result.user!.userType,
+          emailVerified: result.user!.emailVerified,
+          phoneVerified: result.user!.phoneVerified
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Error in createOperator:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during operator creation'
       });
     }
   }
