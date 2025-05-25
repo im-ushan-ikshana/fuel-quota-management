@@ -114,7 +114,7 @@ transactionRouter.get('/search', requirePermission('transaction', 'read'), async
 });
 
 // GET /api/v1/transactions - Get all transactions
-transactionRouter.get('/', requirePermission('transaction', 'read'), async (req: Request, res: Response): Promise<void> => {
+transactionRouter.get('/', requirePermission('vehicle', 'create'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = '1', limit = '50', startDate, endDate, vehicleId, fuelStationId } = req.query;
     
