@@ -2,6 +2,7 @@ import PrismaService from '../services/prisma.services';
 import { handlePrismaError } from '../utils/prisma.middleware';
 import { createLogger } from '../utils/logger';
 import { FuelTransaction, TransactionStatus, FuelType } from '@prisma/client';
+import SmsService from '@/services/sms.services';
 
 const logger = createLogger('TransactionRepository');
 
@@ -52,9 +53,11 @@ export interface TransactionWithDetails extends FuelTransaction {
 
 class TransactionRepository {
   private prismaService: PrismaService;
+  smsService: SmsService;
 
   constructor() {
     this.prismaService = PrismaService.getInstance();
+    this.smsService = new SmsService();
   }
   /**
    * Create a new fuel transaction
@@ -69,6 +72,38 @@ class TransactionRepository {
             transactionDate: new Date(),
           },
         });
+
+        //send the sms to the vehicle owner
+        const vehicle = await prisma.vehicle.findUnique({
+          where: { id: transactionData.vehicleId },
+          select: {
+            owner: {
+              select: {
+                user: {
+                  select: {
+                    phoneNumber: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (vehicle) {
+          const { phoneNumber } = vehicle.owner.user;
+          // Send SMS to the vehicle owner
+          try {
+            await this.smsService.sendQuotaNotification(
+              phoneNumber,
+              transaction.quantityLiters,
+              transaction.fuelType
+            );
+
+            logger.info(`SMS sent to vehicle owner: ${phoneNumber}`);
+          } catch (error) {
+            logger.error(`Error sending SMS to vehicle owner:`, error);
+          }
+        }
 
         logger.info(`Transaction created successfully: ${transaction.id}`);
         return transaction;
@@ -93,7 +128,8 @@ class TransactionRepository {
               registrationNumber: true,
               vehicleType: true,
               owner: {
-                select: {                  user: {
+                select: {
+                  user: {
                     select: {
                       firstName: true,
                       lastName: true,
@@ -153,7 +189,7 @@ class TransactionRepository {
         where.transactionDate = {};
         if (filters.startDate) where.transactionDate.gte = filters.startDate;
         if (filters.endDate) where.transactionDate.lte = filters.endDate;
-      }      if (filters.vehicleId) where.vehicleId = filters.vehicleId;
+      } if (filters.vehicleId) where.vehicleId = filters.vehicleId;
       if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId;
       if (filters.operatorId) where.operatorId = filters.operatorId;
 
@@ -181,7 +217,7 @@ class TransactionRepository {
                 },
               },
             },
-          },          fuelStation: {
+          }, fuelStation: {
             select: {
               id: true,
               name: true,
@@ -254,7 +290,7 @@ class TransactionRepository {
       }
 
       if (filters.vehicleId) where.vehicleId = filters.vehicleId;
-      if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId;      const stats = await this.prismaService.getClient().fuelTransaction.aggregate({
+      if (filters.fuelStationId) where.fuelStationId = filters.fuelStationId; const stats = await this.prismaService.getClient().fuelTransaction.aggregate({
         where,
         _count: { id: true },
         _sum: {

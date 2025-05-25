@@ -2,6 +2,7 @@ import PrismaService from '../services/prisma.services';
 import { handlePrismaError } from '../utils/prisma.middleware';
 import { createLogger } from '../utils/logger';
 import { UserType, District, Province } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = createLogger('AuthRepository');
 
@@ -240,15 +241,15 @@ class AuthRepository {
   }> {
     try {
       const prisma = this.prismaService.getClient();
-        // First create a user with type VEHICLE_OWNER
+      // First create a user with type VEHICLE_OWNER
       // Remove vehicleInfo from userData before creating User since it's not part of the User model
       const { vehicleInfo, ...userDataWithoutVehicle } = userData;
-      
+      const qrCode = `qr_${uuidv4()}`;
       const userWithVehicleOwnerType = {
         ...userDataWithoutVehicle,
         userType: UserType.VEHICLE_OWNER
       };
-      
+
       // Use a transaction to ensure all related records are created properly
       const result = await prisma.$transaction(async (tx) => {
         // Create the user
@@ -264,7 +265,7 @@ class AuthRepository {
             }
           }
         });
-        
+
         // Create the vehicle owner record linked to the user
         const vehicleOwner = await tx.vehicleOwner.create({
           data: {
@@ -284,7 +285,7 @@ class AuthRepository {
             }
           }
         });
-        
+
         // If vehicle information is provided, create the vehicle
         if (userData.vehicleInfo) {
           const vehicleData = {
@@ -296,17 +297,18 @@ class AuthRepository {
             vehicleType: userData.vehicleInfo.vehicleType as any, // Conversion to VehicleType enum
             fuelType: userData.vehicleInfo.fuelType as any, // Conversion to FuelType enum
             ownerId: vehicleOwner.id,
+            qrCode: qrCode,
             isActive: true
           };
-          
+
           await tx.vehicle.create({
             data: vehicleData
           });
         }
-        
+
         return vehicleOwner;
       });
-      
+
       return result;
     } catch (error) {
       logger.error('Error creating vehicle owner:', error);
@@ -319,9 +321,9 @@ class AuthRepository {
    * @returns The newly created fuel station owner with user details
    */
   async createFuelStationOwner(
-    userData: CreateUserData, 
-    businessData: { 
-      businessRegNo: string; 
+    userData: CreateUserData,
+    businessData: {
+      businessRegNo: string;
       businessName: string;
     }
   ): Promise<{
@@ -333,15 +335,15 @@ class AuthRepository {
   }> {
     try {
       const prisma = this.prismaService.getClient();
-        // First create a user with type FUEL_STATION_OWNER
+      // First create a user with type FUEL_STATION_OWNER
       // Remove stationInfo from userData before creating User since it's not part of the User model
       const { stationInfo, ...userDataWithoutStation } = userData;
-      
+
       const userWithStationOwnerType = {
         ...userDataWithoutStation,
         userType: UserType.FUEL_STATION_OWNER
       };
-      
+
       // Use a transaction to ensure all related records are created properly
       const result = await prisma.$transaction(async (tx) => {
         // Create the user
@@ -357,7 +359,7 @@ class AuthRepository {
             }
           }
         });
-        
+
         // Create the fuel station owner record linked to the user
         const fuelStationOwner = await tx.fuelStationOwner.create({
           data: {
@@ -379,18 +381,18 @@ class AuthRepository {
             }
           }
         });
-        
+
         // If station information is provided, create the fuel station
         if (userData.stationInfo) {
           // Create a new address for the fuel station
           const stationAddressData = {
             ...userData.stationInfo.address,
           };
-          
+
           const stationAddress = await tx.address.create({
             data: stationAddressData
           });
-          
+
           // Create the fuel station
           const fuelStationData = {
             stationCode: userData.stationInfo.stationCode,
@@ -401,11 +403,11 @@ class AuthRepository {
             addressId: stationAddress.id,
             isActive: true
           };
-          
+
           const fuelStation = await tx.fuelStation.create({
             data: fuelStationData
           });
-          
+
           // Create fuel inventory record
           if (userData.stationInfo.info) {
             await tx.fuelInventory.create({
@@ -419,10 +421,10 @@ class AuthRepository {
             });
           }
         }
-        
+
         return fuelStationOwner;
       });
-      
+
       return result;
     } catch (error) {
       logger.error('Error creating fuel station owner:', error);
@@ -449,13 +451,13 @@ class AuthRepository {
   }> {
     try {
       const prisma = this.prismaService.getClient();
-      
+
       // Create user with FUEL_STATION_OPERATOR type
       const userWithOperatorType = {
         ...userData,
         userType: UserType.FUEL_STATION_OPERATOR
       };
-      
+
       // Use a transaction to ensure all related records are created properly
       const result = await prisma.$transaction(async (tx) => {
         // Create the user
@@ -471,7 +473,7 @@ class AuthRepository {
             }
           }
         });
-        
+
         // Create the fuel station operator record linked to the user
         const fuelStationOperator = await tx.fuelStationOperator.create({
           data: {
@@ -493,10 +495,10 @@ class AuthRepository {
             }
           }
         });
-        
+
         return fuelStationOperator;
       });
-      
+
       return result;
     } catch (error) {
       logger.error('Error creating fuel station operator:', error);
