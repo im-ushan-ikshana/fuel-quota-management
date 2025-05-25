@@ -26,8 +26,8 @@ class Server {
 
   public start(): void {
     const port = this.app.getPort();
-    
-    const server = this.app.getApp().listen(port, () => {
+    // Listen on 0.0.0.0 for emulator/device access
+    const server = this.app.getApp().listen(port, '0.0.0.0', () => {
       logger.info('Server Configuration:');
       logger.info(`   Port: ${port}`);
       logger.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);

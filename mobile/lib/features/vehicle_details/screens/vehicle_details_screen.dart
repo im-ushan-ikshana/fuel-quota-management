@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/core/utils/helpers.dart';
 import 'package:mobile/core/widgets/app_button.dart';
 import 'package:mobile/data/models/vehicle.dart';
-import 'package:mobile/data/models/user.dart';
+import 'package:mobile/data/models/fuel/pump_fuel_request.dart';
+import 'package:mobile/data/repositories/fuel_repository.dart';
+import 'package:mobile/data/repositories/auth_repository_new.dart';
 import 'package:mobile/features/dashboard/screens/dashboard_screen.dart';
 import 'package:mobile/features/vehicle_details/widgets/quota_indicator.dart';
 
@@ -314,7 +317,6 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
       icon: Icons.check_circle,
     );
   }
-
   void _handleConfirmTransaction() async {
     if (_formKey.currentState?.validate() != true) {
       return;
@@ -325,11 +327,29 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     });
     
     try {
-      // In a real app, this would be an API call to process the transaction
-      await Future.delayed(const Duration(seconds: 2));
+      final fuelAmount = double.parse(_fuelAmountController.text);
+      final fuelRepo = Provider.of<FuelRepository>(context, listen: false);
+      final authRepo = Provider.of<AuthRepository>(context, listen: false);
+      
+      // Create pump fuel request
+      final request = PumpFuelRequest(
+        qrCode: widget.vehicle.id, // Using vehicle ID as QR code for now
+        vehicleId: widget.vehicle.id,
+        pumpedLitres: fuelAmount,
+        stationId: authRepo.currentUser?.id ?? 'unknown', // Using operator ID as station ID for demo
+      );
 
-      if (mounted) {
-        _showSuccessDialog();
+      // Record the fuel pumping transaction
+      final transaction = await fuelRepo.pumpFuel(request);
+
+      if (transaction != null && mounted) {
+        _showSuccessDialog(fuelAmount);
+      } else {
+        UIHelper.showSnackBar(
+          context,
+          'Failed to record transaction',
+          isError: true,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -348,9 +368,7 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     }
   }
 
-  void _showSuccessDialog() {
-    final fuelAmount = double.parse(_fuelAmountController.text);
-    
+  void _showSuccessDialog(double fuelAmount) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -368,6 +386,8 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
           children: [
             Text('You have dispensed ${Formatter.formatFuel(fuelAmount)} to ${widget.vehicle.registrationNumber}.'),
             const SizedBox(height: 16),
+            Text('Transaction has been recorded successfully.'),
+            const SizedBox(height: 8),
             Text('Remaining quota: ${Formatter.formatFuel(widget.vehicle.availableQuota - fuelAmount)}'),
           ],
         ),
@@ -375,13 +395,10 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              // Return to dashboard
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => DashboardScreen(
-                    user: User.demo(),
-                  ),
+                  builder: (context) => const DashboardScreen(),
                 ),
                 (route) => false,
               );

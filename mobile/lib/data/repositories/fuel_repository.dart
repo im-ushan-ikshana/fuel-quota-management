@@ -1,38 +1,49 @@
 import 'package:flutter/foundation.dart';
-import 'package:mobile/data/models/fuel/fuel_quota_response.dart';
-import 'package:mobile/data/models/fuel/pump_fuel_request.dart';
-import 'package:mobile/data/services/fuel_service.dart';
+import '../models/vehicle.dart';
+import '../models/transaction.dart';
+import '../models/fuel/pump_fuel_request.dart';
+import '../api/fuel_api_service.dart';
+import '../../core/models/api_response.dart';
 
 /// Repository that handles fuel-related operations
 class FuelRepository extends ChangeNotifier {
-  final FuelService _fuelService;
+  final FuelApiService _fuelApiService;
   
   bool _isLoading = false;
   String? _error;
-  FuelQuotaResponse? _currentQuota;
+  Vehicle? _currentVehicle;
+  List<Transaction> _recentTransactions = [];
   
   // Getters
   bool get isLoading => _isLoading;
   String? get error => _error;
-  FuelQuotaResponse? get currentQuota => _currentQuota;
+  Vehicle? get currentVehicle => _currentVehicle;
+  List<Transaction> get recentTransactions => _recentTransactions;
   
   FuelRepository({
-    required FuelService fuelService,
-  }) : _fuelService = fuelService;
+    FuelApiService? fuelApiService,
+  }) : _fuelApiService = fuelApiService ?? FuelApiService.instance;
   
-  /// Check fuel quota for a vehicle using its QR code
-  Future<FuelQuotaResponse?> checkQuota(String qrCode) async {
+  /// Scan QR code to get vehicle quota information
+  Future<Vehicle?> scanQrCode(String qrCode) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
     
     try {
-      final quota = await _fuelService.checkQuota(qrCode);
-      _currentQuota = quota;
-      notifyListeners();
-      return quota;
+      final response = await _fuelApiService.scanQrCode(qrCode);
+      
+      if (response.success && response.data != null) {
+        _currentVehicle = response.data;
+        notifyListeners();
+        return response.data;
+      } else {
+        _error = response.message;
+        notifyListeners();
+        return null;
+      }
     } catch (e) {
-      _error = e.toString();
+      _error = _handleError(e);
       notifyListeners();
       return null;
     } finally {
@@ -42,48 +53,102 @@ class FuelRepository extends ChangeNotifier {
   }
   
   /// Record a fuel pumping transaction
-  Future<bool> pumpFuel({
-    required String qrCode,
-    required String vehicleId,
-    required double pumpedLitres,
-    required String stationId,
-  }) async {
+  Future<Transaction?> pumpFuel(PumpFuelRequest request) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
     
     try {
-      final request = PumpFuelRequest(
-        qrCode: qrCode,
-        vehicleId: vehicleId,
-        pumpedLitres: pumpedLitres,
-        stationId: stationId,
-      );
+      final response = await _fuelApiService.pumpFuel(request);
       
-      await _fuelService.pumpFuel(request);
-      
-      // Update the local quota data if we have it
-      if (_currentQuota != null) {
-        final updatedUsedLitres = _currentQuota!.usedLitres + pumpedLitres;
-        final updatedRemainingLitres = _currentQuota!.allocatedLitres - updatedUsedLitres;
+      if (response.success && response.data != null) {
+        final transaction = response.data!;
         
-        _currentQuota = FuelQuotaResponse(
-          registrationNo: _currentQuota!.registrationNo,
-          vehicleType: _currentQuota!.vehicleType,
-          allocatedLitres: _currentQuota!.allocatedLitres,
-          usedLitres: updatedUsedLitres,
-          remainingLitres: updatedRemainingLitres,
-          quotaPeriod: _currentQuota!.quotaPeriod,
-          ownerName: _currentQuota!.ownerName,
-        );
+        // Update the local vehicle quota data if we have it
+        if (_currentVehicle != null && _currentVehicle!.quotaInfo != null) {
+          final newUsedQuota = _currentVehicle!.quotaInfo!.usedQuota + request.pumpedLitres;
+          final newRemainingQuota = _currentVehicle!.quotaInfo!.allocatedQuota - newUsedQuota;
+          final newQuotaPercentage = (newUsedQuota / _currentVehicle!.quotaInfo!.allocatedQuota * 100);
+          
+          _currentVehicle = _currentVehicle!.copyWith(
+            quotaInfo: QuotaInfo(
+              allocatedQuota: _currentVehicle!.quotaInfo!.allocatedQuota,
+              usedQuota: newUsedQuota,
+              remainingQuota: newRemainingQuota,
+              quotaPercentage: newQuotaPercentage,
+            ),
+          );
+        }
+        
+        // Add to recent transactions
+        _recentTransactions.insert(0, transaction);
+        if (_recentTransactions.length > 20) {
+          _recentTransactions = _recentTransactions.take(20).toList();
+        }
+        
+        notifyListeners();
+        return transaction;
+      } else {
+        _error = response.message;
+        notifyListeners();
+        return null;
       }
-      
-      notifyListeners();
-      return true;
     } catch (e) {
-      _error = e.toString();
+      _error = _handleError(e);
       notifyListeners();
-      return false;
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  /// Get transaction details by ID
+  Future<Transaction?> getTransactionDetails(String transactionId) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    
+    try {
+      final response = await _fuelApiService.getTransactionDetails(transactionId);
+      
+      if (response.success && response.data != null) {
+        notifyListeners();
+        return response.data;
+      } else {
+        _error = response.message;
+        notifyListeners();
+        return null;
+      }
+    } catch (e) {
+      _error = _handleError(e);
+      notifyListeners();
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  /// Load recent transactions
+  Future<void> loadRecentTransactions({int limit = 20}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    
+    try {
+      final response = await _fuelApiService.getRecentTransactions(limit: limit);
+      
+      if (response.success && response.data != null) {
+        _recentTransactions = response.data!;
+        notifyListeners();
+      } else {
+        _error = response.message;
+        notifyListeners();
+      }
+    } catch (e) {
+      _error = _handleError(e);
+      notifyListeners();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -96,9 +161,30 @@ class FuelRepository extends ChangeNotifier {
     notifyListeners();
   }
   
-  /// Reset the current quota data
-  void resetQuotaData() {
-    _currentQuota = null;
+  /// Reset the current vehicle data
+  void resetVehicleData() {
+    _currentVehicle = null;
     notifyListeners();
+  }
+  
+  /// Clear all data
+  void clearAll() {
+    _currentVehicle = null;
+    _recentTransactions.clear();
+    _error = null;
+    notifyListeners();
+  }
+  
+  /// Handle different types of errors
+  String _handleError(dynamic error) {
+    if (error is AuthException) {
+      return 'Authentication failed. Please login again.';
+    } else if (error is NetworkException) {
+      return 'Network error. Please check your internet connection.';
+    } else if (error is ApiException) {
+      return error.message;
+    } else {
+      return 'An unexpected error occurred: ${error.toString()}';
+    }
   }
 }

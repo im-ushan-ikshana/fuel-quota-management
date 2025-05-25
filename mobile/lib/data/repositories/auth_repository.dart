@@ -1,55 +1,52 @@
 import 'package:flutter/foundation.dart';
-import 'package:mobile/core/utils/local_storage.dart';
-import 'package:mobile/data/models/auth/login_request.dart';
-import 'package:mobile/data/models/user.dart';
-import 'package:mobile/data/services/auth_service.dart';
-import 'package:mobile/data/services/token_manager.dart';
+import '../models/user.dart';
+import '../models/auth/login_response.dart';
+import '../api/auth_api_service.dart';
+import '../../core/models/api_response.dart';
 
 /// Repository that handles authentication operations
 class AuthRepository extends ChangeNotifier {
-  final AuthService _authService;
-  final TokenManager _tokenManager;
+  final AuthApiService _authApiService;
   
-  User? _currentUser;
   bool _isLoading = false;
   String? _error;
+  User? _currentUser;
+  bool _isLoggedIn = false;
   
   // Getters
-  User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isLoggedIn => _currentUser != null;
-  
+  User? get currentUser => _currentUser;
+  bool get isLoggedIn => _isLoggedIn;  
   AuthRepository({
-    required AuthService authService,
-    required TokenManager tokenManager,
-  })  : _authService = authService,
-        _tokenManager = tokenManager {
-    // Check if user is already logged in on initialization
-    _initializeUser();
-  }
-  
-  /// Initialize user from stored token
-  Future<void> _initializeUser() async {
+    AuthApiService? authApiService,
+  }) : _authApiService = authApiService ?? AuthApiService.instance;
+
+  /// Initialize authentication state on app start
+  Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
     
     try {
-      final user = await _tokenManager.getUser();
-      if (user != null) {
-        _currentUser = user;
+      _isLoggedIn = await _authApiService.isLoggedIn();
+      
+      if (_isLoggedIn) {
+        _currentUser = await _authApiService.getCurrentUser();
       }
     } catch (e) {
-      _error = e.toString();
-      await _tokenManager.clearAuthData();
+      _isLoggedIn = false;
+      _currentUser = null;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
-  
-  /// Log in a user with username and password
-  Future<bool> login(String username, String password, {bool rememberMe = false}) async {
+
+  /// Login operator with email and password
+  Future<bool> login({
+    required String email,
+    required String password,
+  }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
