@@ -48,6 +48,18 @@ export interface RegisterUserData {
   stationInfo?: fuelStationInfo;
 }
 
+export interface CreateOperatorData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  nicNumber: string;
+  address: CreateAddressData;
+  employeeId: string;
+  fuelStationId: string;
+}
+
 export interface LoginData {
   email?: string;
   phoneNumber?: string;
@@ -752,6 +764,143 @@ class AuthService {
     } catch (error) {
       logger.error('Error getting user roles:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Create fuel station operator (Admin only)
+   */
+  async createOperator(operatorData: CreateOperatorData, ipAddress?: string, userAgent?: string): Promise<AuthResponse> {
+    try {
+      // Validate required fields
+      const requiredFields = {
+        email: operatorData.email,
+        password: operatorData.password,
+        firstName: operatorData.firstName,
+        lastName: operatorData.lastName,
+        phoneNumber: operatorData.phoneNumber,
+        nicNumber: operatorData.nicNumber,
+        employeeId: operatorData.employeeId,
+        fuelStationId: operatorData.fuelStationId,
+        address: operatorData.address
+      };
+
+      const missingFields = Object.entries(requiredFields).filter(([key, value]) => !value);
+      if (missingFields.length > 0) {
+        return {
+          success: false,
+          message: `Missing required fields: ${missingFields.map(([key]) => key).join(', ')}`
+        };
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(operatorData.email)) {
+        return {
+          success: false,
+          message: 'Invalid email format'
+        };
+      }
+
+      // Validate phone number (Sri Lankan format)
+      const phoneRegex = /^(\+94|0)?[1-9]\d{8}$/;
+      if (!phoneRegex.test(operatorData.phoneNumber.replace(/\s+/g, ''))) {
+        return {
+          success: false,
+          message: 'Invalid Sri Lankan phone number format'
+        };
+      }
+
+      // Validate NIC number
+      const oldNicRegex = /^[0-9]{9}[vVxX]$/;
+      const newNicRegex = /^[0-9]{12}$/;
+      if (!oldNicRegex.test(operatorData.nicNumber) && !newNicRegex.test(operatorData.nicNumber)) {
+        return {
+          success: false,
+          message: 'Invalid Sri Lankan NIC number format'
+        };
+      }
+
+      // Check if user already exists
+      const existingUser = await this.authRepository.findUserByEmail(operatorData.email);
+      if (existingUser) {
+        return {
+          success: false,
+          message: 'User with this email already exists'
+        };
+      }
+
+      // Create address first
+      const address = await this.authRepository.createAddress(operatorData.address);
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(operatorData.password, 12);
+
+      // Create base user data
+      const createUserData: CreateUserData = {
+        email: operatorData.email,
+        password: hashedPassword,
+        firstName: operatorData.firstName,
+        lastName: operatorData.lastName,
+        phoneNumber: operatorData.phoneNumber,
+        nicNumber: operatorData.nicNumber,
+        userType: UserType.FUEL_STATION_OPERATOR,
+        addressId: address.id
+      };
+
+      // Create the fuel station operator
+      const operatorResult = await this.authRepository.createFuelStationOperator(createUserData, {
+        employeeId: operatorData.employeeId,
+        fuelStationId: operatorData.fuelStationId
+      });
+
+      const user = operatorResult.user;
+
+      // Generate verification codes
+      await this.sendEmailVerification(user.id, user.email);
+      await this.sendPhoneVerification(user.id, user.phoneNumber);
+
+      // Send welcome SMS
+      if (this.smsService) {
+        await this.smsService.sendWelcomeSms(user.phoneNumber, user.firstName);
+      }      // Create session
+      const sessionData: SessionData = {
+        userId: user.id,
+        ipAddress,
+        userAgent,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+      };
+      const sessionResult = await this.authRepository.createSession(sessionData);
+      const sessionId = sessionResult.sessionId;
+
+      // Generate tokens
+      const token = jwt.sign(
+        { 
+          userId: user.id, 
+          email: user.email,
+          userType: user.userType,
+          sessionId: sessionId 
+        },
+        process.env.JWT_SECRET || 'fallback-secret',
+        { expiresIn: '24h' }
+      );
+
+      logger.info(`Fuel station operator created successfully: ${operatorData.email}`);
+
+      return {
+        success: true,
+        message: 'Fuel station operator created successfully',
+        user,
+        token,
+        sessionId
+      };
+
+    } catch (error) {
+      logger.error('Error creating fuel station operator:', error);
+      return {
+        success: false,
+        message: 'Internal server error during operator creation'
+      };
     }
   }
 }
