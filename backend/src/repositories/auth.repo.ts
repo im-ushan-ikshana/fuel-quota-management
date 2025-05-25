@@ -428,6 +428,80 @@ class AuthRepository {
       logger.error('Error creating fuel station owner:', error);
       throw handlePrismaError(error, 'creating fuel station owner');
     }
+  } /**
+   * Create a Fuel Station Operator
+   * @param userData - User data for the operator
+   * @param operatorData - Operator specific data (employeeId and fuelStationId)
+   * @returns The newly created fuel station operator with user details
+   */
+  async createFuelStationOperator(
+    userData: CreateUserData,
+    operatorData: {
+      employeeId: string;
+      fuelStationId: string;
+    }
+  ): Promise<{
+    id: string;
+    employeeId: string;
+    userId: string;
+    fuelStationId: string;
+    user: UserWithRelations;
+  }> {
+    try {
+      const prisma = this.prismaService.getClient();
+      
+      // Create user with FUEL_STATION_OPERATOR type
+      const userWithOperatorType = {
+        ...userData,
+        userType: UserType.FUEL_STATION_OPERATOR
+      };
+      
+      // Use a transaction to ensure all related records are created properly
+      const result = await prisma.$transaction(async (tx) => {
+        // Create the user
+        const user = await tx.user.create({
+          data: userWithOperatorType,
+          include: {
+            address: true,
+            userRoles: {
+              where: { isActive: true },
+              include: {
+                role: true
+              }
+            }
+          }
+        });
+        
+        // Create the fuel station operator record linked to the user
+        const fuelStationOperator = await tx.fuelStationOperator.create({
+          data: {
+            userId: user.id,
+            employeeId: operatorData.employeeId,
+            fuelStationId: operatorData.fuelStationId
+          },
+          include: {
+            user: {
+              include: {
+                address: true,
+                userRoles: {
+                  where: { isActive: true },
+                  include: {
+                    role: true
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        return fuelStationOperator;
+      });
+      
+      return result;
+    } catch (error) {
+      logger.error('Error creating fuel station operator:', error);
+      throw handlePrismaError(error, 'creating fuel station operator');
+    }
   }
 
   /**
