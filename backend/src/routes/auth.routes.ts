@@ -83,6 +83,16 @@ authRouter.post('/assign-role',
 );
 
 /**
+ * POST /api/auth/create-operator
+ * Create fuel station operator (Admin only)
+ */
+authRouter.post('/create-operator', 
+  authenticateJWT, 
+  requirePermission('vehicle', 'create'), 
+  authController.createOperator.bind(authController)
+);
+
+/**
  * POST /api/auth/remove-role
  * Remove role from user (Admin only)
  */
