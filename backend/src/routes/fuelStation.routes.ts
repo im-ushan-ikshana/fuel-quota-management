@@ -14,7 +14,7 @@ const logger = createLogger('FuelStationRoutes');
  */
 fuelStationRouter.post('/register', 
   authenticateJWT,
-  requirePermission('vehicle', 'create'),
+  requirePermission('fuel_station', 'create'),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const stationData: RegisterFuelStationRequest = req.body;
