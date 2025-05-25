@@ -1,2 +1,15 @@
-# remove all files(node_modules) in the backend directory
-node_modules/*
+# remove all files(node_modules) in the backend directory - including folder itself
+prisma/migrations
+
+node_modules
+
+#remove env files
+.env
+
+#remove vs_code settings
+.vscode
+
+#remove help docs in the root directory - types (.md)
+docs/*-temp.md 
+
+dist

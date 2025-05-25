@@ -1,26 +1,258 @@
+/* filepath: d:\fuel-quota-management\frontend\src\app\globals.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+
 :root {
+  /* Base colors */
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@theme inline {
+  --font-landing: 'Montserrat', sans-serif;
+  --font-app: 'Poppins', sans-serif;
+  --scale-factor: 0.90;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  
+  /* UI Element Colors - Light Theme */
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #c1c1c1;
+  --scrollbar-thumb-hover: #a1a1a1;
+  
+  --checkbox-border: #a3a3a3;
+  --checkbox-bg: #ffffff;
+  --checkbox-checked: #16a34a; /* green-600 */
+  
+  --select-border: #d1d5db;
+  --select-bg: #ffffff;
+  --select-text: #171717;
+  --select-focus-border: #16a34a; /* green-600 */
+  --select-hover-bg: #f9fafb;
+  
+  --input-border: #d1d5db;
+  --input-bg: #ffffff;
+  --input-focus-border: #16a34a; /* green-600 */
+  --input-placeholder: #9ca3af;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    
+    /* UI Element Colors - Dark Theme */
+    --scrollbar-track: #1f1f1f;
+    --scrollbar-thumb: #4a4a4a;
+    --scrollbar-thumb-hover: #5f5f5f;
+    
+    --checkbox-border: #6b7280;
+    --checkbox-bg: #374151;
+    --checkbox-checked: #22c55e; /* green-500 */
+    
+    --select-border: #4b5563;
+    --select-bg: #1f2937;
+    --select-text: #f3f4f6;
+    --select-focus-border: #22c55e; /* green-500 */
+    --select-hover-bg: #374151;
+    
+    --input-border: #4b5563;
+    --input-bg: #1f2937;
+    --input-focus-border: #22c55e; /* green-500 */
+    --input-placeholder: #6b7280;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    font-size: calc(100% * var(--scale-factor));
+    scroll-behavior: smooth;
+    @apply text-gray-800 dark:text-gray-200;
+  }
+  
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-app);
+    line-height: 1.6;
+    @apply bg-white dark:bg-gray-900;
+  }
+  
+  h1, h2, h3, h4, h5, h6, .landing-text {
+    font-family: var(--font-landing);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 5px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+  
+  /* Custom checkbox styling */
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--checkbox-border);
+    border-radius: 3px;
+    background-color: var(--checkbox-bg);
+    display: inline-block;
+    position: relative;
+    margin-right: 0.5rem;
+    cursor: pointer;
+    vertical-align: text-bottom;
+  }
+  
+  input[type="checkbox"]:checked {
+    background-color: var(--checkbox-checked);
+    border-color: var(--checkbox-checked);
+  }
+  
+  input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 2px;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  
+  /* Select dropdown styling */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--select-bg);
+    border: 1px solid var(--select-border);
+    border-radius: 6px;
+    color: var(--select-text);
+    cursor: pointer;
+    padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+    width: 100%;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+  }
+  
+  select:focus {
+    outline: none;
+    border-color: var(--select-focus-border);
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2); /* green-600 with opacity */
+  }
+  
+  select:hover:not(:disabled) {
+    background-color: var(--select-hover-bg);
+  }
+  
+  /* Input field styling */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="number"],
+  input[type="tel"],
+  textarea {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    background-color: var(--input-bg);
+    color: var(--foreground);
+    transition: border-color 0.2s ease-in-out;
+  }
+  
+  input:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--input-focus-border);
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2); /* green-600 with opacity */
+  }
+  
+  ::placeholder {
+    color: var(--input-placeholder);
+  }
+}
+
+@layer components {
+  /* Component layer styles */
+}
+
+@layer utilities {
+  /* Utility layer styles */
+  
+  /* 404 page animations */
+  .fuel-gauge {
+    animation: pulse 3s infinite alternate, fillGauge 4s ease-in-out forwards;
+    background-size: 200% 100%;
+  }
+  
+  @keyframes pulse {
+    0% { opacity: 0.75; }
+    100% { opacity: 1; }
+  }
+  
+  @keyframes fillGauge {
+    0% { width: 0%; }
+    30% { width: 10%; }
+    60% { width: 20%; }
+    100% { width: 30%; }
+  }
+  
+  /* Error page animations */
+  .fuel-gauge-error {
+    animation: errorPulse 1.5s infinite alternate, errorFill 3s ease-out forwards;
+  }
+  
+  @keyframes errorPulse {
+    0% { opacity: 0.8; }
+    100% { opacity: 1; }
+  }
+  
+  @keyframes errorFill {
+    0% { width: 10%; }
+    40% { width: 40%; }
+    70% { width: 50%; }
+    100% { width: 60%; }
+  }
+  
+  @media (min-width: 768px) {
+    .fuel-gauge {
+      animation: pulse 3s infinite alternate, fillGaugeLarge 4.5s ease-in-out forwards;
+    }
+    
+    @keyframes fillGaugeLarge {
+      0% { width: 0%; }
+      30% { width: 12%; }
+      60% { width: 22%; }
+      100% { width: 35%; }
+    }
+    
+    .fuel-gauge-error {
+      animation: errorPulse 1.5s infinite alternate, errorFillLarge 3s ease-out forwards;
+    }
+    
+    @keyframes errorFillLarge {
+      0% { width: 15%; }
+      40% { width: 45%; }
+      70% { width: 55%; }
+      100% { width: 65%; }
+    }
+  }
 }
